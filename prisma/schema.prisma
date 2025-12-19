@@ -1,0 +1,380 @@
+// prisma/schema.prisma
+// Modelo de datos para ERP Construcción MX
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// CORE: Multi-tenancy y Autenticación
+// ============================================
+
+// Empresa (tenant principal)
+model Empresa {
+  id              String   @id @default(cuid())
+  nombre          String
+  rfc             String   @unique
+  razonSocial     String
+  regimenFiscal   String?
+  codigoPostal    String?
+  direccion       String?
+  telefono        String?
+  email           String?
+  logo            String?
+  activa          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relaciones
+  usuarios        UsuarioEmpresa[]
+  obras           Obra[]
+  clientes        Cliente[]
+  proveedores     Proveedor[]
+  productos       Producto[]
+  unidades        Unidad[]
+  categorias      Categoria[]
+
+  @@map("empresas")
+}
+
+// Usuario del sistema
+model Usuario {
+  id            String   @id @default(cuid())
+  authId        String   @unique // ID de Supabase Auth
+  email         String   @unique
+  nombre        String
+  apellidos     String?
+  telefono      String?
+  avatar        String?
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  empresas      UsuarioEmpresa[]
+
+  @@map("usuarios")
+}
+
+// Relación Usuario-Empresa (muchos a muchos con rol)
+model UsuarioEmpresa {
+  id          String   @id @default(cuid())
+  usuarioId   String
+  empresaId   String
+  rol         Rol      @default(USUARIO)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  empresa     Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, empresaId])
+  @@map("usuarios_empresas")
+}
+
+enum Rol {
+  ADMIN       // Administrador general
+  CONTADOR    // Acceso a contabilidad
+  VENTAS      // Ventas y facturación
+  COMPRAS     // Compras y proveedores
+  OBRAS       // Gestión de obras
+  USUARIO     // Usuario básico (solo lectura)
+}
+
+// ============================================
+// MÓDULO: Gestión de Obras y Proyectos
+// ============================================
+
+model Obra {
+  id              String      @id @default(cuid())
+  empresaId       String
+  codigo          String      // Código interno de la obra
+  nombre          String
+  descripcion     String?
+  ubicacion       String?
+  estado          EstadoObra  @default(EN_PROCESO)
+  tipoContrato    TipoContrato @default(PRECIO_ALZADO)
+  
+  // Fechas
+  fechaInicio     DateTime?
+  fechaFinProgramada DateTime?
+  fechaFinReal    DateTime?
+  
+  // Montos
+  montoContrato   Decimal     @default(0) @db.Decimal(18, 2)
+  anticipoPct     Decimal     @default(0) @db.Decimal(5, 2) // % de anticipo
+  retencionPct    Decimal     @default(0) @db.Decimal(5, 2) // % de retención
+  
+  // Cliente
+  clienteId       String?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relaciones
+  empresa         Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente         Cliente?    @relation(fields: [clienteId], references: [id])
+  contratos       Contrato[]
+  presupuestos    Presupuesto[]
+  estimaciones    Estimacion[]
+
+  @@unique([empresaId, codigo])
+  @@map("obras")
+}
+
+enum EstadoObra {
+  COTIZACION
+  CONTRATADA
+  EN_PROCESO
+  SUSPENDIDA
+  TERMINADA
+  CANCELADA
+}
+
+enum TipoContrato {
+  PRECIO_ALZADO       // Monto fijo
+  PRECIOS_UNITARIOS   // Por unidad ejecutada
+  ADMINISTRACION      // Costo + fee
+  MIXTO
+}
+
+model Contrato {
+  id              String   @id @default(cuid())
+  obraId          String
+  numero          String   // Número de contrato
+  descripcion     String?
+  montoOriginal   Decimal  @db.Decimal(18, 2)
+  montoActual     Decimal  @db.Decimal(18, 2) // Con convenios
+  fechaContrato   DateTime
+  fechaInicio     DateTime?
+  fechaTermino    DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  obra            Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+
+  @@map("contratos")
+}
+
+model Presupuesto {
+  id              String   @id @default(cuid())
+  obraId          String
+  version         Int      @default(1)
+  nombre          String
+  descripcion     String?
+  esVigente       Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  obra            Obra     @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  conceptos       ConceptoPresupuesto[]
+
+  @@map("presupuestos")
+}
+
+model ConceptoPresupuesto {
+  id              String   @id @default(cuid())
+  presupuestoId   String
+  clave           String   // Clave del concepto
+  descripcion     String
+  unidadId        String?
+  cantidad        Decimal  @db.Decimal(18, 4)
+  precioUnitario  Decimal  @db.Decimal(18, 4)
+  importe         Decimal  @db.Decimal(18, 2) // cantidad * precioUnitario
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  presupuesto     Presupuesto @relation(fields: [presupuestoId], references: [id], onDelete: Cascade)
+  unidad          Unidad?     @relation(fields: [unidadId], references: [id])
+
+  @@map("conceptos_presupuesto")
+}
+
+model Estimacion {
+  id              String          @id @default(cuid())
+  obraId          String
+  numero          Int             // Número de estimación
+  periodo         String          // "2024-01" formato año-mes
+  fechaCorte      DateTime
+  estado          EstadoEstimacion @default(BORRADOR)
+  
+  // Montos
+  importeBruto    Decimal         @db.Decimal(18, 2)
+  amortizacion    Decimal         @default(0) @db.Decimal(18, 2)
+  retencion       Decimal         @default(0) @db.Decimal(18, 2)
+  importeNeto     Decimal         @db.Decimal(18, 2)
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  obra            Obra            @relation(fields: [obraId], references: [id], onDelete: Cascade)
+
+  @@unique([obraId, numero])
+  @@map("estimaciones")
+}
+
+enum EstadoEstimacion {
+  BORRADOR
+  ENVIADA
+  APROBADA
+  FACTURADA
+  PAGADA
+  RECHAZADA
+}
+
+// ============================================
+// MÓDULO: Catálogos
+// ============================================
+
+model Cliente {
+  id              String   @id @default(cuid())
+  empresaId       String
+  codigo          String?
+  rfc             String
+  razonSocial     String
+  nombreComercial String?
+  regimenFiscal   String?
+  usoCfdi         String?  @default("G03") // Gastos en general
+  
+  // Dirección fiscal
+  calle           String?
+  numExterior     String?
+  numInterior     String?
+  colonia         String?
+  codigoPostal    String?
+  municipio       String?
+  estado          String?
+  pais            String?  @default("MEX")
+  
+  // Contacto
+  email           String?
+  telefono        String?
+  contacto        String?
+  
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  empresa         Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  obras           Obra[]
+
+  @@unique([empresaId, rfc])
+  @@map("clientes")
+}
+
+model Proveedor {
+  id              String   @id @default(cuid())
+  empresaId       String
+  codigo          String?
+  rfc             String
+  razonSocial     String
+  nombreComercial String?
+  
+  // Dirección
+  calle           String?
+  numExterior     String?
+  numInterior     String?
+  colonia         String?
+  codigoPostal    String?
+  municipio       String?
+  estado          String?
+  pais            String?  @default("MEX")
+  
+  // Contacto
+  email           String?
+  telefono        String?
+  contacto        String?
+  
+  // Bancario
+  banco           String?
+  cuenta          String?
+  clabe           String?
+  
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  empresa         Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, rfc])
+  @@map("proveedores")
+}
+
+model Producto {
+  id              String   @id @default(cuid())
+  empresaId       String
+  codigo          String
+  descripcion     String
+  categoriaId     String?
+  unidadId        String?
+  
+  // SAT
+  claveSat        String?  // Clave producto/servicio SAT
+  claveUnidadSat  String?  // Clave unidad SAT
+  
+  // Precios
+  precioCompra    Decimal  @default(0) @db.Decimal(18, 4)
+  precioVenta     Decimal  @default(0) @db.Decimal(18, 4)
+  
+  // Control
+  esServicio      Boolean  @default(false)
+  controlStock    Boolean  @default(true)
+  stockMinimo     Decimal  @default(0) @db.Decimal(18, 4)
+  stockActual     Decimal  @default(0) @db.Decimal(18, 4)
+  
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  empresa         Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  categoria       Categoria? @relation(fields: [categoriaId], references: [id])
+  unidad          Unidad?   @relation(fields: [unidadId], references: [id])
+
+  @@unique([empresaId, codigo])
+  @@map("productos")
+}
+
+model Categoria {
+  id          String   @id @default(cuid())
+  empresaId   String
+  nombre      String
+  descripcion String?
+  color       String?  // Para UI
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa     Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  productos   Producto[]
+
+  @@unique([empresaId, nombre])
+  @@map("categorias")
+}
+
+model Unidad {
+  id              String   @id @default(cuid())
+  empresaId       String
+  nombre          String   // "Pieza", "Metro", "Kg"
+  abreviatura     String   // "PZA", "M", "KG"
+  claveSat        String?  // Clave SAT de unidad
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  empresa         Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  productos       Producto[]
+  conceptos       ConceptoPresupuesto[]
+
+  @@unique([empresaId, abreviatura])
+  @@map("unidades")
+}
