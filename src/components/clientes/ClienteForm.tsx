@@ -45,7 +45,21 @@ export function ClienteForm({ initialData, onSuccess }: ClienteFormProps) {
 
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
-        defaultValues: initialData || {
+        defaultValues: initialData ? {
+            rfc: initialData.rfc,
+            razonSocial: initialData.razonSocial,
+            nombreComercial: initialData.nombreComercial || "",
+            email: initialData.email || "",
+            telefono: initialData.telefono || "",
+            contacto: initialData.contacto || "",
+            calle: initialData.calle || "",
+            numExterior: initialData.numExterior || "",
+            colonia: initialData.colonia || "",
+            codigoPostal: initialData.codigoPostal || "",
+            municipio: initialData.municipio || "",
+            estado: initialData.estado || "",
+            pais: initialData.pais || "MEX",
+        } : {
             rfc: "",
             razonSocial: "",
             nombreComercial: "",
