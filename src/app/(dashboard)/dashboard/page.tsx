@@ -35,7 +35,7 @@ export default async function DashboardPage() {
   const empresaId = usuario.empresas[0].empresaId
 
   // Obtener estadísticas reales
-  const [totalObras, obrasActivas, totalClientes, totalPresupuestos, presupuestosVigentes, obrasRecientes, presupuestosRecientes] = await Promise.all([
+  const [totalObras, obrasActivas, totalClientes, totalPresupuestos, presupuestosVigentes, obrasRecientes, presupuestosRecientes, obrasPorEstado] = await Promise.all([
     prisma.obra.count({
       where: { empresaId }
     }),
@@ -81,8 +81,23 @@ export default async function DashboardPage() {
       },
       orderBy: { updatedAt: 'desc' },
       take: 5
+    }),
+    prisma.obra.groupBy({
+      by: ['estado'],
+      where: { empresaId },
+      _count: { id: true },
+      _sum: { montoContrato: true }
     })
   ])
+
+  // Preparar datos para gráficas
+  const estadisticasPorEstado = obrasPorEstado.map(item => ({
+    estado: item.estado,
+    cantidad: item._count.id,
+    monto: Number(item._sum.montoContrato || 0)
+  }))
+
+  const montoTotalCartera = estadisticasPorEstado.reduce((sum, item) => sum + item.monto, 0)
 
   const stats = [
     {
