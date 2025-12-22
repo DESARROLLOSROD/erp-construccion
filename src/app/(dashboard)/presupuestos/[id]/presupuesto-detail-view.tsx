@@ -6,7 +6,7 @@ import { PresupuestoConTotales } from "@/types/presupuesto"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ConceptoTable } from "@/components/presupuestos/ConceptoTable"
-import { ArrowLeft, Building2, FileText, CheckCircle2, Circle, Calendar, Edit } from "lucide-react"
+import { ArrowLeft, Building2, FileText, CheckCircle2, Circle, Calendar, Edit, TrendingUp, Download } from "lucide-react"
 import Link from "next/link"
 import {
     Dialog,
@@ -27,6 +27,7 @@ export function PresupuestoDetailView({ presupuesto: initialPresupuesto, unidade
     const router = useRouter()
     const [presupuesto, setPresupuesto] = useState(initialPresupuesto)
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+    const [isDownloading, setIsDownloading] = useState(false)
 
     const formatDate = (date: Date) => {
         return new Intl.DateTimeFormat('es-MX', {
@@ -75,6 +76,31 @@ export function PresupuestoDetailView({ presupuesto: initialPresupuesto, unidade
         }
     }
 
+    const handleDownloadPDF = async () => {
+        setIsDownloading(true)
+        try {
+            const response = await fetch(`/api/presupuestos/${presupuesto.id}/pdf`)
+            if (!response.ok) {
+                throw new Error('Error al generar PDF')
+            }
+
+            const blob = await response.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `Presupuesto_${presupuesto.obra?.codigo}_v${presupuesto.version}.pdf`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+        } catch (error) {
+            console.error('Error al descargar PDF:', error)
+            alert('Error al generar el PDF')
+        } finally {
+            setIsDownloading(false)
+        }
+    }
+
     // Mock obras array para el form (solo necesitamos la obra actual ya que no se puede cambiar)
     const obras: ObraListItem[] = presupuesto.obra ? [{
         ...presupuesto.obra,
@@ -111,10 +137,26 @@ export function PresupuestoDetailView({ presupuesto: initialPresupuesto, unidade
                         </p>
                     </div>
                 </div>
-                <Button variant="outline" onClick={() => setIsEditDialogOpen(true)}>
-                    <Edit className="h-4 w-4 mr-2" />
-                    Editar Presupuesto
-                </Button>
+                <div className="flex gap-2">
+                    <Button
+                        variant="secondary"
+                        onClick={handleDownloadPDF}
+                        disabled={isDownloading}
+                    >
+                        <Download className="h-4 w-4 mr-2" />
+                        {isDownloading ? 'Generando...' : 'Descargar PDF'}
+                    </Button>
+                    <Link href={`/presupuestos/${presupuesto.id}/avance`}>
+                        <Button variant="default">
+                            <TrendingUp className="h-4 w-4 mr-2" />
+                            Ver Avance de Obra
+                        </Button>
+                    </Link>
+                    <Button variant="outline" onClick={() => setIsEditDialogOpen(true)}>
+                        <Edit className="h-4 w-4 mr-2" />
+                        Editar Presupuesto
+                    </Button>
+                </div>
             </div>
 
             {/* Información del presupuesto */}

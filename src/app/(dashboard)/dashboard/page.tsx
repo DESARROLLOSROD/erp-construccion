@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { HardHat, Users, FileText, DollarSign, AlertCircle, Clock, Plus } from 'lucide-react'
+import { HardHat, Users, FileText, DollarSign, AlertCircle, Clock, Plus, ClipboardList, CheckCircle2 } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { createServerClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
@@ -35,7 +35,7 @@ export default async function DashboardPage() {
   const empresaId = usuario.empresas[0].empresaId
 
   // Obtener estadísticas reales
-  const [totalObras, obrasActivas, totalClientes, obrasRecientes] = await Promise.all([
+  const [totalObras, obrasActivas, totalClientes, totalPresupuestos, presupuestosVigentes, obrasRecientes, presupuestosRecientes] = await Promise.all([
     prisma.obra.count({
       where: { empresaId }
     }),
@@ -45,6 +45,12 @@ export default async function DashboardPage() {
     prisma.cliente.count({
       where: { empresaId, activo: true }
     }),
+    prisma.presupuesto.count({
+      where: { obra: { empresaId } }
+    }),
+    prisma.presupuesto.count({
+      where: { obra: { empresaId }, esVigente: true }
+    }),
     prisma.obra.findMany({
       where: { empresaId, estado: 'EN_PROCESO' },
       include: {
@@ -52,6 +58,24 @@ export default async function DashboardPage() {
           select: {
             razonSocial: true,
             nombreComercial: true,
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 5
+    }),
+    prisma.presupuesto.findMany({
+      where: { obra: { empresaId } },
+      include: {
+        obra: {
+          select: {
+            codigo: true,
+            nombre: true,
+          }
+        },
+        conceptos: {
+          select: {
+            importe: true,
           }
         }
       },
@@ -78,11 +102,11 @@ export default async function DashboardPage() {
       color: 'bg-blue-500',
     },
     {
-      name: 'Por facturar',
-      value: '$0',
-      change: 'Próximamente',
-      changeType: 'neutral',
-      icon: FileText,
+      name: 'Presupuestos',
+      value: totalPresupuestos.toString(),
+      change: `${presupuestosVigentes} vigentes`,
+      changeType: 'positive',
+      icon: ClipboardList,
       color: 'bg-green-500',
     },
     {
@@ -134,9 +158,9 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-2">
         {/* Obras recientes */}
-        <Card className="lg:col-span-2">
+        <Card>
           <CardHeader>
             <CardTitle className="text-lg">Obras en proceso</CardTitle>
             <CardDescription>Resumen de avance de tus obras activas</CardDescription>
@@ -182,8 +206,63 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Alertas */}
+        {/* Presupuestos recientes */}
         <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Presupuestos recientes</CardTitle>
+            <CardDescription>Últimos presupuestos actualizados</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {presupuestosRecientes.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No hay presupuestos</p>
+                <Link href="/presupuestos">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Crear presupuesto
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {presupuestosRecientes.map((presupuesto) => {
+                  const importeTotal = presupuesto.conceptos.reduce((sum, c) => sum + Number(c.importe), 0)
+                  return (
+                    <Link key={presupuesto.id} href={`/presupuestos/${presupuesto.id}`}>
+                      <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono text-muted-foreground">v{presupuesto.version}</span>
+                            {presupuesto.esVigente && (
+                              <CheckCircle2 className="h-4 w-4 text-green-600" />
+                            )}
+                          </div>
+                          <p className="font-medium truncate">{presupuesto.nombre}</p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {presupuesto.obra?.codigo} - {presupuesto.obra?.nombre}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">
+                            ${(importeTotal / 1000000).toFixed(1)}M
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {presupuesto.conceptos.length} conceptos
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Alertas */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <AlertCircle className="h-5 w-5 text-amber-500" />

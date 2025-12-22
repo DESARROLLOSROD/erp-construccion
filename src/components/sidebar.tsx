@@ -16,10 +16,12 @@ import {
   Settings,
   ChevronLeft,
   ClipboardList,
-  Receipt
+  Receipt,
+  Search
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui'
+import { GlobalSearch } from '@/components/search/GlobalSearch'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -40,6 +42,20 @@ const secondaryNavigation = [
 export function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Atajo de teclado Ctrl+K o Cmd+K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <>
@@ -71,8 +87,27 @@ export function Sidebar() {
           </Button>
         </div>
 
+        {/* Botón de búsqueda */}
+        <div className="px-3 pt-4 pb-2">
+          <Button
+            variant="outline"
+            className="w-full justify-start text-slate-400 border-slate-700 hover:bg-slate-800 hover:text-white"
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search className="h-4 w-4 mr-2" />
+            {!collapsed && (
+              <>
+                <span className="flex-1 text-left">Buscar...</span>
+                <kbd className="hidden xl:inline-flex h-5 select-none items-center gap-1 rounded border border-slate-600 bg-slate-800 px-1.5 font-mono text-[10px] font-medium text-slate-400">
+                  <span className="text-xs">⌘</span>K
+                </kbd>
+              </>
+            )}
+          </Button>
+        </div>
+
         {/* Navegación principal */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
+        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto scrollbar-thin">
           {navigation.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
             return (
@@ -115,6 +150,9 @@ export function Sidebar() {
           })}
         </div>
       </aside>
+
+      {/* Dialog de búsqueda global */}
+      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
 
       {/* Mobile: navbar inferior (opcional, simplificado) */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t z-50">
