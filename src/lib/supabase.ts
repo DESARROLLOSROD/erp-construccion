@@ -1,5 +1,4 @@
 import { createClientComponentClient, createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
 
 /**
  * Cliente de Supabase para componentes del cliente (Client Components)
@@ -14,6 +13,8 @@ export const createClient = () => {
  * Usar en: page.tsx, layout.tsx, route.ts
  */
 export const createServerClient = () => {
+  // Importación dinámica de cookies solo cuando se ejecuta en servidor
+  const { cookies } = require('next/headers')
   const cookieStore = cookies()
   return createServerComponentClient({ cookies: () => cookieStore })
 }

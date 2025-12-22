@@ -1,56 +1,103 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
-import { HardHat, Users, FileText, DollarSign, AlertCircle, Clock } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { HardHat, Users, FileText, DollarSign, AlertCircle, Clock, Plus } from 'lucide-react'
+import { prisma } from '@/lib/prisma'
+import { createServerClient } from '@/lib/supabase'
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
-// Datos de ejemplo (después vendrán de la BD)
-const stats = [
-  {
-    name: 'Obras activas',
-    value: '12',
-    change: '+2 este mes',
-    changeType: 'positive',
-    icon: HardHat,
-    color: 'bg-orange-500',
-  },
-  {
-    name: 'Clientes',
-    value: '48',
-    change: '+5 este mes',
-    changeType: 'positive',
-    icon: Users,
-    color: 'bg-blue-500',
-  },
-  {
-    name: 'Por facturar',
-    value: '$2.4M',
-    change: '8 estimaciones',
-    changeType: 'neutral',
-    icon: FileText,
-    color: 'bg-green-500',
-  },
-  {
-    name: 'Por cobrar',
-    value: '$1.8M',
-    change: '15 facturas',
-    changeType: 'warning',
-    icon: DollarSign,
-    color: 'bg-purple-500',
-  },
-]
+export default async function DashboardPage() {
+  const supabase = createServerClient()
+  const { data: { session } } = await supabase.auth.getSession()
 
-const obrasRecientes = [
-  { id: 1, codigo: 'OBR-2024-001', nombre: 'Torre Residencial Santa Fe', cliente: 'Grupo Constructor ABC', avance: 45, monto: 25000000, estado: 'EN_PROCESO' },
-  { id: 2, codigo: 'OBR-2024-002', nombre: 'Nave Industrial Querétaro', cliente: 'Desarrollos QRO SA', avance: 78, monto: 18500000, estado: 'EN_PROCESO' },
-  { id: 3, codigo: 'OBR-2024-003', nombre: 'Plaza Comercial Satélite', cliente: 'Inmobiliaria del Norte', avance: 12, monto: 42000000, estado: 'EN_PROCESO' },
-  { id: 4, codigo: 'OBR-2024-004', nombre: 'Puente Vehicular Reforma', cliente: 'Gobierno CDMX', avance: 92, monto: 85000000, estado: 'EN_PROCESO' },
-]
+  if (!session) {
+    redirect('/login')
+  }
 
-const alertas = [
-  { tipo: 'estimacion', mensaje: 'Estimación #3 de Torre Santa Fe pendiente de aprobar', tiempo: '2 horas' },
-  { tipo: 'pago', mensaje: 'Factura FAC-2024-089 vence en 3 días', tiempo: '5 horas' },
-  { tipo: 'material', mensaje: 'Stock bajo de cemento en almacén principal', tiempo: '1 día' },
-]
+  // Obtener contexto de empresa
+  const usuario = await prisma.usuario.findUnique({
+    where: { authId: session.user.id },
+    include: { empresas: true }
+  })
 
-export default function DashboardPage() {
+  if (!usuario || usuario.empresas.length === 0) {
+    return (
+      <div className="p-8">
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+          <p className="text-sm text-yellow-700">
+            Tu usuario no está asignado a ninguna empresa activa. Contacta al administrador.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const empresaId = usuario.empresas[0].empresaId
+
+  // Obtener estadísticas reales
+  const [totalObras, obrasActivas, totalClientes, obrasRecientes] = await Promise.all([
+    prisma.obra.count({
+      where: { empresaId }
+    }),
+    prisma.obra.count({
+      where: { empresaId, estado: 'EN_PROCESO' }
+    }),
+    prisma.cliente.count({
+      where: { empresaId, activo: true }
+    }),
+    prisma.obra.findMany({
+      where: { empresaId, estado: 'EN_PROCESO' },
+      include: {
+        cliente: {
+          select: {
+            razonSocial: true,
+            nombreComercial: true,
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 5
+    })
+  ])
+
+  const stats = [
+    {
+      name: 'Obras activas',
+      value: obrasActivas.toString(),
+      change: `${totalObras} total`,
+      changeType: 'positive',
+      icon: HardHat,
+      color: 'bg-orange-500',
+    },
+    {
+      name: 'Clientes',
+      value: totalClientes.toString(),
+      change: 'Activos',
+      changeType: 'positive',
+      icon: Users,
+      color: 'bg-blue-500',
+    },
+    {
+      name: 'Por facturar',
+      value: '$0',
+      change: 'Próximamente',
+      changeType: 'neutral',
+      icon: FileText,
+      color: 'bg-green-500',
+    },
+    {
+      name: 'Por cobrar',
+      value: '$0',
+      change: 'Próximamente',
+      changeType: 'neutral',
+      icon: DollarSign,
+      color: 'bg-purple-500',
+    },
+  ]
+
+  const alertas = [
+    { tipo: 'info', mensaje: 'Sistema de facturación próximamente disponible', tiempo: 'Hoy' },
+  ]
   return (
     <div className="space-y-6">
       {/* Título */}
@@ -95,35 +142,43 @@ export default function DashboardPage() {
             <CardDescription>Resumen de avance de tus obras activas</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {obrasRecientes.map((obra) => (
-                <div key={obra.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-muted-foreground">{obra.codigo}</span>
-                    </div>
-                    <p className="font-medium truncate">{obra.nombre}</p>
-                    <p className="text-sm text-muted-foreground truncate">{obra.cliente}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">
-                      ${(obra.monto / 1000000).toFixed(1)}M
-                    </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${obra.avance}%` }}
-                        />
+            {obrasRecientes.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">No hay obras en proceso</p>
+                <Link href="/obras">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Crear primera obra
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {obrasRecientes.map((obra) => (
+                  <Link key={obra.id} href={`/obras`}>
+                    <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-muted-foreground">{obra.codigo}</span>
+                        </div>
+                        <p className="font-medium truncate">{obra.nombre}</p>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {obra.cliente?.nombreComercial || obra.cliente?.razonSocial || 'Sin cliente'}
+                        </p>
                       </div>
-                      <span className="text-xs text-muted-foreground w-8">
-                        {obra.avance}%
-                      </span>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">
+                          ${(Number(obra.montoContrato) / 1000000).toFixed(1)}M
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {obra.ubicacion || 'Sin ubicación'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
