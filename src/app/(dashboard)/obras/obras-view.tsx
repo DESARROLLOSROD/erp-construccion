@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { ObraListItem } from "@/types/obra"
 import { ObraTable } from "@/components/obras/ObraTable"
 import { ObraForm } from "@/components/obras/ObraForm"
@@ -19,9 +20,14 @@ interface ObrasViewProps {
 }
 
 export function ObrasView({ initialObras }: ObrasViewProps) {
+    const router = useRouter()
     const [obras, setObras] = useState(initialObras)
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [selectedObra, setSelectedObra] = useState<ObraListItem | null>(null)
+
+    const handleView = (obra: ObraListItem) => {
+        router.push(`/obras/${obra.id}`)
+    }
 
     const handleEdit = (obra: ObraListItem) => {
         setSelectedObra(obra)
@@ -87,7 +93,7 @@ export function ObrasView({ initialObras }: ObrasViewProps) {
 
             {/* Tabla */}
             <div className="bg-white rounded-lg border">
-                <ObraTable obras={obras} onEdit={handleEdit} />
+                <ObraTable obras={obras} onView={handleView} onEdit={handleEdit} />
             </div>
 
             {/* Dialog para crear/editar */}

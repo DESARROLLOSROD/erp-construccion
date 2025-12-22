@@ -57,7 +57,7 @@ export function ObraDetailView({ obra, presupuestos }: ObraDetailViewProps) {
         }).format(value)
     }
 
-    const formatDate = (date: Date | null) => {
+    const formatDate = (date: Date | null | undefined) => {
         if (!date) return 'No definida'
         return new Intl.DateTimeFormat('es-MX', {
             dateStyle: 'medium',
