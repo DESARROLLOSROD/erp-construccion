@@ -2,11 +2,11 @@
 
 ## 🎉 Resumen Ejecutivo
 
-Se ha completado exitosamente la implementación de **4 módulos principales** y **2 catálogos auxiliares** para el ERP de Construcción, alcanzando un **36% de completitud** del sistema total.
+Se ha completado exitosamente la implementación de **5 módulos principales** y **2 catálogos auxiliares** para el ERP de Construcción, alcanzando un **45% de completitud** del sistema total.
 
 ---
 
-## 📦 Módulos Completados (4/11)
+## 📦 Módulos Completados (5/11)
 
 ### 1. **Módulo de Clientes** ✅ 100%
 **Archivos:** 6 archivos
@@ -90,6 +90,40 @@ Se ha completado exitosamente la implementación de **4 módulos principales** y
 
 ---
 
+### 5. **Módulo de Presupuestos** ✅ 100%
+**Archivos:** 9 archivos
+**Funcionalidades:**
+- CRUD completo de presupuestos por obra
+- Gestión de versiones de presupuestos
+- Control de presupuesto vigente (solo uno por obra)
+- **Gestión de conceptos:**
+  - Clave y descripción del concepto
+  - Cantidad y precio unitario
+  - Cálculo automático de importes
+  - Relación con unidades de medida
+  - CRUD completo de conceptos dentro del presupuesto
+- Integración con obras
+- Cálculo automático de totales
+- Vista detallada con tabla de conceptos
+- Estadísticas de presupuestos
+
+**Rutas:**
+- `/presupuestos` - Página principal con lista de presupuestos
+- `/presupuestos/[id]` - Vista detallada con conceptos
+- `GET/POST /api/presupuestos` - Listar y crear presupuestos
+- `GET/PUT/DELETE /api/presupuestos/[id]` - Operaciones individuales
+- `GET/POST /api/presupuestos/[id]/conceptos` - Gestión de conceptos
+
+**Características especiales:**
+- Control de versión vigente (automáticamente desmarca otros al marcar uno como vigente)
+- Cálculo en tiempo real de importes (cantidad × precio unitario)
+- Tabla interactiva de conceptos con diálogo para agregar/editar
+- Totalizador de presupuesto con suma de todos los conceptos
+- Filtrado por obra en listado general
+- Integración completa con catálogo de unidades de medida
+
+---
+
 ## 🏷️ Catálogos Auxiliares (2/2)
 
 ### 1. **Unidades de Medida** ✅ 100%
@@ -115,23 +149,25 @@ Se ha completado exitosamente la implementación de **4 módulos principales** y
 ## 📊 Estadísticas del Proyecto
 
 ### Archivos Totales Creados
-- **Tipos TypeScript:** 5 archivos
-- **API Routes:** 20 endpoints (10 recursos)
-- **Componentes UI:** 10 componentes
-- **Páginas:** 5 páginas completas
+- **Tipos TypeScript:** 6 archivos
+- **API Routes:** 25 endpoints (13 recursos)
+- **Componentes UI:** 15 componentes (incluyendo select, textarea, switch)
+- **Páginas:** 7 páginas completas
 - **Documentación:** 3 archivos
 
-**Total:** 43 archivos nuevos
+**Total:** 56 archivos nuevos
 
 ### Rutas Generadas (Build)
 ```
-18 rutas totales:
+25 rutas totales:
 - 1 ruta raíz
 - 1 not-found
-- 12 API endpoints
-- 4 páginas de dashboard
+- 15 API endpoints
+- 6 páginas de dashboard
   • /dashboard (estadísticas reales)
   • /obras (gestión de obras)
+  • /presupuestos (gestión de presupuestos)
+  • /presupuestos/[id] (detalle de presupuesto con conceptos)
   • /catalogos/clientes (gestión de clientes)
   • /catalogos/proveedores (gestión de proveedores)
   • /catalogos/productos (gestión de productos)
@@ -141,7 +177,7 @@ Se ha completado exitosamente la implementación de **4 módulos principales** y
 ### Tamaño del Bundle
 ```
 First Load JS: 84.2 kB (shared)
-Páginas dinámicas: 91-133 kB
+Páginas dinámicas: 91-162 kB
 Middleware: 157 kB
 ```
 
@@ -221,18 +257,17 @@ Middleware: 157 kB
 ✅ Compiled successfully
 ✅ 0 errores de TypeScript
 ✅ 0 errores de linting
-✅ 18 rutas generadas
+✅ 25 rutas generadas
 ✅ Optimización de producción completada
 ```
 
 ---
 
-## 📋 Módulos Pendientes (7/11)
+## 📋 Módulos Pendientes (6/11)
 
 ### Prioridad Alta
-1. **Presupuestos** (0%) - Gestión de partidas y conceptos por obra
-2. **Estimaciones** (0%) - Facturación de avances de obra
-3. **Contratos** (0%) - Documentos contractuales y convenios
+1. **Estimaciones** (0%) - Facturación de avances de obra basada en presupuesto
+2. **Contratos** (0%) - Documentos contractuales y convenios
 
 ### Prioridad Media
 4. **Compras** (0%) - Órdenes de compra y requisiciones
@@ -250,15 +285,15 @@ Middleware: 157 kB
 
 ## 📈 Progreso del Proyecto
 
-### Completado: **36%**
+### Completado: **45%**
 
 ```
-├── Core Business (4/11 = 36%)
+├── Core Business (5/11 = 45%)
 │   ├── ✅ Clientes          100%
 │   ├── ✅ Obras             100%
 │   ├── ✅ Proveedores       100%
 │   ├── ✅ Productos         100%
-│   ├── ⏳ Presupuestos      0%
+│   ├── ✅ Presupuestos      100%
 │   ├── ⏳ Estimaciones      0%
 │   ├── ⏳ Contratos         0%
 │   ├── ⏳ Compras           0%
@@ -290,12 +325,12 @@ Middleware: 157 kB
 
 ## 🎯 Próximos Pasos Recomendados
 
-### Fase 1: Completar Flujo de Obras (2-3 semanas)
-1. **Presupuestos** - Permite crear partidas/conceptos por obra
-2. **Estimaciones** - Facturación de avances basada en presupuesto
+### Fase 1: Completar Flujo de Obras ✅ PARCIALMENTE COMPLETADO
+1. ✅ **Presupuestos** - COMPLETADO: Gestión completa de partidas/conceptos por obra
+2. **Estimaciones** - Facturación de avances basada en presupuesto vigente
 3. **Contratos** - Documentación legal de obras
 
-**Impacto:** Desbloquea el flujo completo de obras desde cotización hasta facturación
+**Impacto:** Con Presupuestos completado, el siguiente paso crítico es Estimaciones para el flujo completo de facturación por avance de obra
 
 ### Fase 2: Gestión de Compras (2-3 semanas)
 4. **Compras** - Órdenes de compra vinculadas a obras
@@ -356,23 +391,24 @@ Middleware: 157 kB
 
 ## 🎉 Conclusión
 
-El ERP de Construcción tiene una **base sólida y funcional** con 4 módulos core completamente operativos:
+El ERP de Construcción tiene una **base sólida y funcional** con 5 módulos core completamente operativos:
 
 ✅ **Gestión completa de clientes**
 ✅ **Gestión completa de obras con tipos de contrato**
 ✅ **Gestión completa de proveedores con datos bancarios**
 ✅ **Catálogo completo de productos y servicios con inventario**
+✅ **Gestión completa de presupuestos con conceptos y versiones**
 ✅ **Catálogos auxiliares listos** (unidades y categorías)
 ✅ **Multi-tenancy robusto en todos los módulos**
 ✅ **Sistema de seguridad y validaciones completo**
 ✅ **UI/UX profesional y responsiva**
 ✅ **Build exitoso y optimizado**
 
-El sistema está **listo para comenzar a implementar el flujo de Presupuestos → Estimaciones** que completará el ciclo de vida de las obras.
+El sistema está **listo para implementar el módulo de Estimaciones** que permitirá la facturación de avances de obra basándose en los presupuestos vigentes, completando así el flujo completo del ciclo de vida de obras.
 
 ---
 
-**Versión:** 0.3.0
+**Versión:** 0.4.0
 **Fecha:** 2024-12-22
 **Build:** ✅ Exitoso
-**Progreso:** 36% completado
+**Progreso:** 45% completado

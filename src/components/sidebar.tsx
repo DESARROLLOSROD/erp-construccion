@@ -3,18 +3,19 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { 
-  Building2, 
-  LayoutDashboard, 
-  HardHat, 
-  Users, 
-  Truck, 
-  Package, 
-  FileText, 
-  Calculator, 
+import {
+  Building2,
+  LayoutDashboard,
+  HardHat,
+  Users,
+  Truck,
+  Package,
+  FileText,
+  Calculator,
   Wallet,
   Settings,
-  ChevronLeft
+  ChevronLeft,
+  ClipboardList
 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui'
@@ -22,6 +23,7 @@ import { Button } from '@/components/ui'
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Obras', href: '/obras', icon: HardHat },
+  { name: 'Presupuestos', href: '/presupuestos', icon: ClipboardList },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Proveedores', href: '/proveedores', icon: Truck },
   { name: 'Productos', href: '/productos', icon: Package },
