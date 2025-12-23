@@ -55,7 +55,7 @@ export function StatsChart({ obrasPorEstado, montoTotal }: StatsChartProps) {
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
                 outerRadius={80}
                 fill="#8884d8"
                 dataKey="value"
@@ -65,9 +65,9 @@ export function StatsChart({ obrasPorEstado, montoTotal }: StatsChartProps) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number, name: string, props: any) => [
-                  `${value} obras - ${formatCurrency(props.payload.monto)}`,
-                  name
+                formatter={(value: number | undefined, name: string | undefined, props: any) => [
+                  `${value || 0} obras - ${formatCurrency(props.payload.monto)}`,
+                  name || ''
                 ]}
               />
             </PieChart>
@@ -97,7 +97,7 @@ export function StatsChart({ obrasPorEstado, montoTotal }: StatsChartProps) {
                 tick={{ fontSize: 12 }}
               />
               <Tooltip
-                formatter={(value: number) => formatCurrency(value)}
+                formatter={(value: number | undefined) => formatCurrency(value || 0)}
                 labelStyle={{ fontSize: 12 }}
               />
               <Bar

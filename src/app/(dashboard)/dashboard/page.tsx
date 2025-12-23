@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { createServerClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { StatsChart } from '@/components/dashboard/StatsChart'
 
 export default async function DashboardPage() {
   const supabase = createServerClient()
@@ -172,6 +173,12 @@ export default async function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Gráficas de Estadísticas */}
+      <StatsChart
+        obrasPorEstado={estadisticasPorEstado}
+        montoTotal={montoTotalCartera}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Obras recientes */}
