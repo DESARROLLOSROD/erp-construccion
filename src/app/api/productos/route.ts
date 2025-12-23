@@ -1,172 +1,147 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  createdResponse,
+  errorResponse,
+  getPaginationParams,
+  createPaginatedResponse,
+} from '@/lib/api-utils'
+import { productoQuerySchema, productoCreateSchema, validateSchema } from '@/lib/validations'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  return withRole(['ADMIN', 'COMPRAS', 'VENTAS', 'OBRAS', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const { searchParams } = new URL(req.url)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      const query = validateSchema(productoQuerySchema, {
+        activo: searchParams.get('activo'),
+        categoriaId: searchParams.get('categoriaId'),
+        esServicio: searchParams.get('esServicio'),
+        page: searchParams.get('page') || '1',
+        limit: searchParams.get('limit') || '20',
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const { skip, take } = getPaginationParams(query.page as number, query.limit as number)
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      const where: any = {
+        empresaId: context.empresaId,
+      }
 
-        const empresaId = usuario.empresas[0].empresaId
+      if (query.activo !== undefined) where.activo = query.activo
+      if (query.categoriaId) where.categoriaId = query.categoriaId
+      if (query.esServicio !== undefined) where.esServicio = query.esServicio
 
-        // Obtener parámetros de query
-        const { searchParams } = new URL(request.url)
-        const categoriaId = searchParams.get('categoriaId')
-        const esServicio = searchParams.get('esServicio')
-
-        const productos = await prisma.producto.findMany({
-            where: {
-                empresaId,
-                activo: true,
-                ...(categoriaId && { categoriaId }),
-                ...(esServicio !== null && { esServicio: esServicio === 'true' }),
+      const [productos, total] = await Promise.all([
+        prisma.producto.findMany({
+          where,
+          include: {
+            categoria: {
+              select: {
+                id: true,
+                nombre: true,
+                color: true,
+              }
             },
-            include: {
-                categoria: {
-                    select: {
-                        id: true,
-                        nombre: true,
-                        color: true,
-                    }
-                },
-                unidad: {
-                    select: {
-                        id: true,
-                        nombre: true,
-                        abreviatura: true,
-                    }
-                }
-            },
-            orderBy: { codigo: 'asc' }
-        })
+            unidad: {
+              select: {
+                id: true,
+                nombre: true,
+                abreviatura: true,
+              }
+            }
+          },
+          orderBy: { codigo: 'asc' },
+          skip,
+          take,
+        }),
+        prisma.producto.count({ where })
+      ])
 
-        // Convertir Decimals a números
-        const productosConverted = productos.map(p => ({
-            ...p,
-            precioCompra: Number(p.precioCompra),
-            precioVenta: Number(p.precioVenta),
-            stockMinimo: Number(p.stockMinimo),
-            stockActual: Number(p.stockActual),
-        }))
+      // Convertir Decimals a números
+      const productosConverted = productos.map(p => ({
+        ...p,
+        precioCompra: Number(p.precioCompra),
+        precioVenta: Number(p.precioVenta),
+        stockMinimo: Number(p.stockMinimo),
+        stockActual: Number(p.stockActual),
+      }))
 
-        return NextResponse.json(productosConverted)
+      const response = createPaginatedResponse(productosConverted, total, query.page as number, query.limit as number)
+      return successResponse(response)
     } catch (error) {
-        console.error('[PRODUCTOS_GET]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  return withRole(['ADMIN', 'COMPRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const body = await req.json()
+      const validatedData = validateSchema(productoCreateSchema, body)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Validar duplicados de código
+      const existing = await prisma.producto.findFirst({
+        where: {
+          empresaId: context.empresaId,
+          codigo: validatedData.codigo,
+          activo: true
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (existing) {
+        return errorResponse('Ya existe un producto activo con este código', 409)
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        const {
-            codigo,
-            descripcion,
-            categoriaId,
-            unidadId,
-            claveSat,
-            claveUnidadSat,
-            precioCompra,
-            precioVenta,
-            esServicio,
-            controlStock,
-            stockMinimo,
-            stockActual
-        } = body
-
-        if (!codigo || !descripcion) {
-            return new NextResponse('Código y Descripción son requeridos', { status: 400 })
-        }
-
-        // Validar duplicados de código
-        const existing = await prisma.producto.findFirst({
-            where: {
-                empresaId,
-                codigo: codigo.toUpperCase(),
+      const producto = await prisma.producto.create({
+        data: {
+          empresaId: context.empresaId,
+          codigo: validatedData.codigo,
+          descripcion: validatedData.descripcion,
+          categoriaId: validatedData.categoriaId,
+          unidadId: validatedData.unidadId,
+          claveSat: validatedData.claveSat,
+          claveUnidadSat: validatedData.claveUnidadSat,
+          precioCompra: validatedData.precioCompra,
+          precioVenta: validatedData.precioVenta,
+          esServicio: validatedData.esServicio,
+          controlStock: validatedData.controlStock,
+          stockMinimo: validatedData.stockMinimo,
+          stockActual: validatedData.stockActual,
+        },
+        include: {
+          categoria: {
+            select: {
+              id: true,
+              nombre: true,
+              color: true,
             }
-        })
-
-        if (existing) {
-            return new NextResponse('Ya existe un producto con este código', { status: 409 })
-        }
-
-        const producto = await prisma.producto.create({
-            data: {
-                empresaId,
-                codigo: codigo.toUpperCase(),
-                descripcion,
-                categoriaId: categoriaId || null,
-                unidadId: unidadId || null,
-                claveSat,
-                claveUnidadSat,
-                precioCompra: precioCompra || 0,
-                precioVenta: precioVenta || 0,
-                esServicio: esServicio || false,
-                controlStock: controlStock !== undefined ? controlStock : true,
-                stockMinimo: stockMinimo || 0,
-                stockActual: stockActual || 0,
-            },
-            include: {
-                categoria: {
-                    select: {
-                        id: true,
-                        nombre: true,
-                        color: true,
-                    }
-                },
-                unidad: {
-                    select: {
-                        id: true,
-                        nombre: true,
-                        abreviatura: true,
-                    }
-                }
+          },
+          unidad: {
+            select: {
+              id: true,
+              nombre: true,
+              abreviatura: true,
             }
-        })
-
-        // Convertir Decimals
-        const productoConverted = {
-            ...producto,
-            precioCompra: Number(producto.precioCompra),
-            precioVenta: Number(producto.precioVenta),
-            stockMinimo: Number(producto.stockMinimo),
-            stockActual: Number(producto.stockActual),
+          }
         }
+      })
 
-        return NextResponse.json(productoConverted)
+      // Convertir Decimals
+      const productoConverted = {
+        ...producto,
+        precioCompra: Number(producto.precioCompra),
+        precioVenta: Number(producto.precioVenta),
+        stockMinimo: Number(producto.stockMinimo),
+        stockActual: Number(producto.stockActual),
+      }
+
+      return createdResponse(productoConverted)
     } catch (error) {
-        console.error('[PRODUCTOS_POST]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

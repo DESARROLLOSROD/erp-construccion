@@ -1,128 +1,102 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  createdResponse,
+  getPaginationParams,
+  createPaginatedResponse,
+} from '@/lib/api-utils'
+import { proveedorQuerySchema, proveedorCreateSchema, validateSchema } from '@/lib/validations'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  return withRole(['ADMIN', 'COMPRAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const { searchParams } = new URL(req.url)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      const query = validateSchema(proveedorQuerySchema, {
+        activo: searchParams.get('activo'),
+        page: searchParams.get('page') || '1',
+        limit: searchParams.get('limit') || '20',
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const { skip, take } = getPaginationParams(query.page as number, query.limit as number)
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      const where: any = {
+        empresaId: context.empresaId,
+      }
 
-        const empresaId = usuario.empresas[0].empresaId
+      if (query.activo !== undefined) {
+        where.activo = query.activo
+      }
 
-        const proveedores = await prisma.proveedor.findMany({
-            where: {
-                empresaId,
-                activo: true
-            },
-            orderBy: { updatedAt: 'desc' }
-        })
+      const [proveedores, total] = await Promise.all([
+        prisma.proveedor.findMany({
+          where,
+          orderBy: { updatedAt: 'desc' },
+          skip,
+          take,
+        }),
+        prisma.proveedor.count({ where })
+      ])
 
-        return NextResponse.json(proveedores)
+      const response = createPaginatedResponse(proveedores, total, query.page as number, query.limit as number)
+      return successResponse(response)
     } catch (error) {
-        console.error('[PROVEEDORES_GET]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  return withRole(['ADMIN', 'COMPRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const body = await req.json()
+      const validatedData = validateSchema(proveedorCreateSchema, body)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      const existing = await prisma.proveedor.findFirst({
+        where: {
+          empresaId: context.empresaId,
+          rfc: validatedData.rfc,
+          activo: true
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Ya existe un proveedor activo con este RFC' },
+          { status: 409 }
+        )
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
+      const proveedor = await prisma.proveedor.create({
+        data: {
+          empresaId: context.empresaId,
+          codigo: validatedData.codigo,
+          rfc: validatedData.rfc,
+          razonSocial: validatedData.razonSocial,
+          nombreComercial: validatedData.nombreComercial,
+          calle: validatedData.calle,
+          numExterior: validatedData.numExterior,
+          numInterior: validatedData.numInterior,
+          colonia: validatedData.colonia,
+          codigoPostal: validatedData.codigoPostal,
+          municipio: validatedData.municipio,
+          estado: validatedData.estado,
+          pais: validatedData.pais,
+          email: validatedData.email,
+          telefono: validatedData.telefono,
+          contacto: validatedData.contacto,
+          banco: validatedData.banco,
+          cuenta: validatedData.cuenta,
+          clabe: validatedData.clabe,
         }
+      })
 
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        const {
-            codigo,
-            rfc,
-            razonSocial,
-            nombreComercial,
-            calle,
-            numExterior,
-            numInterior,
-            colonia,
-            codigoPostal,
-            municipio,
-            estado,
-            pais,
-            email,
-            telefono,
-            contacto,
-            banco,
-            cuenta,
-            clabe
-        } = body
-
-        if (!rfc || !razonSocial) {
-            return new NextResponse('RFC y Razón Social son requeridos', { status: 400 })
-        }
-
-        // Validar duplicados
-        const existing = await prisma.proveedor.findFirst({
-            where: {
-                empresaId,
-                rfc,
-                activo: true
-            }
-        })
-
-        if (existing) {
-            return new NextResponse('Ya existe un proveedor activo con este RFC', { status: 409 })
-        }
-
-        const proveedor = await prisma.proveedor.create({
-            data: {
-                empresaId,
-                codigo,
-                rfc: rfc.toUpperCase(),
-                razonSocial,
-                nombreComercial,
-                calle,
-                numExterior,
-                numInterior,
-                colonia,
-                codigoPostal,
-                municipio,
-                estado,
-                pais: pais || 'MEX',
-                email,
-                telefono,
-                contacto,
-                banco,
-                cuenta,
-                clabe
-            }
-        })
-
-        return NextResponse.json(proveedor)
+      return createdResponse(proveedor)
     } catch (error) {
-        console.error('[PROVEEDORES_POST]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

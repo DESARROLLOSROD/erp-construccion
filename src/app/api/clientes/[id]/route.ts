@@ -1,153 +1,149 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  errorResponse,
+  verifyResourceOwnership,
+} from '@/lib/api-utils'
+import { clienteUpdateSchema, validateSchema, idSchema } from '@/lib/validations'
 
 export async function GET(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'VENTAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const clienteId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Verificar propiedad y obtener cliente
+      const isOwner = await verifyResourceOwnership(clienteId, context.empresaId, 'cliente')
+      if (!isOwner) {
+        return errorResponse('Cliente no encontrado', 404)
+      }
+
+      const cliente = await prisma.cliente.findUnique({
+        where: { id: clienteId },
+        include: {
+          obras: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+              estado: true,
+            },
+            take: 10,
+            orderBy: { updatedAt: 'desc' }
+          }
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (!cliente) {
+        return errorResponse('Cliente no encontrado', 404)
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        const cliente = await prisma.cliente.findFirst({
-            where: {
-                id: params.id,
-                empresaId
-            }
-        })
-
-        if (!cliente) {
-            return new NextResponse('Cliente no encontrado', { status: 404 })
-        }
-
-        return NextResponse.json(cliente)
+      return successResponse(cliente)
     } catch (error) {
-        console.error('[CLIENTE_GET_ID]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function PUT(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'VENTAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const clienteId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad
+      const isOwner = await verifyResourceOwnership(clienteId, context.empresaId, 'cliente')
+      if (!isOwner) {
+        return errorResponse('Cliente no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const body = await req.json()
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      // Validar datos con Zod
+      const validatedData = validateSchema(clienteUpdateSchema, body)
 
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        // Verificar que el cliente exista y pertenezca a la empresa
+      // Si está cambiando el RFC, validar que no exista otro
+      if (validatedData.rfc) {
         const existing = await prisma.cliente.findFirst({
-            where: { id: params.id, empresaId }
+          where: {
+            empresaId: context.empresaId,
+            rfc: validatedData.rfc,
+            activo: true,
+            NOT: { id: clienteId }
+          }
         })
 
-        if (!existing) {
-            return new NextResponse('Cliente no encontrado', { status: 404 })
+        if (existing) {
+          return errorResponse('Ya existe otro cliente activo con este RFC', 409)
         }
+      }
 
-        const cliente = await prisma.cliente.update({
-            where: { id: params.id },
-            data: {
-                codigo: body.codigo,
-                rfc: body.rfc?.toUpperCase(),
-                razonSocial: body.razonSocial,
-                nombreComercial: body.nombreComercial,
-                regimenFiscal: body.regimenFiscal,
-                usoCfdi: body.usoCfdi,
-                calle: body.calle,
-                numExterior: body.numExterior,
-                numInterior: body.numInterior,
-                colonia: body.colonia,
-                codigoPostal: body.codigoPostal,
-                municipio: body.municipio,
-                estado: body.estado,
-                pais: body.pais,
-                email: body.email,
-                telefono: body.telefono,
-                contacto: body.contacto,
-                // No permitimos cambiar empresaId ni createdAt
-            }
-        })
+      // Preparar datos para actualización (solo campos presentes)
+      const updateData: any = {}
 
-        return NextResponse.json(cliente)
+      if (validatedData.codigo !== undefined) updateData.codigo = validatedData.codigo
+      if (validatedData.rfc !== undefined) updateData.rfc = validatedData.rfc
+      if (validatedData.razonSocial !== undefined) updateData.razonSocial = validatedData.razonSocial
+      if (validatedData.nombreComercial !== undefined) updateData.nombreComercial = validatedData.nombreComercial
+      if (validatedData.regimenFiscal !== undefined) updateData.regimenFiscal = validatedData.regimenFiscal
+      if (validatedData.usoCfdi !== undefined) updateData.usoCfdi = validatedData.usoCfdi
+      if (validatedData.calle !== undefined) updateData.calle = validatedData.calle
+      if (validatedData.numExterior !== undefined) updateData.numExterior = validatedData.numExterior
+      if (validatedData.numInterior !== undefined) updateData.numInterior = validatedData.numInterior
+      if (validatedData.colonia !== undefined) updateData.colonia = validatedData.colonia
+      if (validatedData.codigoPostal !== undefined) updateData.codigoPostal = validatedData.codigoPostal
+      if (validatedData.municipio !== undefined) updateData.municipio = validatedData.municipio
+      if (validatedData.estado !== undefined) updateData.estado = validatedData.estado
+      if (validatedData.pais !== undefined) updateData.pais = validatedData.pais
+      if (validatedData.email !== undefined) updateData.email = validatedData.email
+      if (validatedData.telefono !== undefined) updateData.telefono = validatedData.telefono
+      if (validatedData.contacto !== undefined) updateData.contacto = validatedData.contacto
+
+      const cliente = await prisma.cliente.update({
+        where: { id: clienteId },
+        data: updateData,
+      })
+
+      return successResponse(cliente)
     } catch (error) {
-        console.error('[CLIENTE_PUT]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function DELETE(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const clienteId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad
+      const isOwner = await verifyResourceOwnership(clienteId, context.empresaId, 'cliente')
+      if (!isOwner) {
+        return errorResponse('Cliente no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      // Soft delete (cambiar a inactivo)
+      const cliente = await prisma.cliente.update({
+        where: { id: clienteId },
+        data: { activo: false }
+      })
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Verificar existencia
-        const existing = await prisma.cliente.findFirst({
-            where: { id: params.id, empresaId }
-        })
-
-        if (!existing) {
-            return new NextResponse('Cliente no encontrado', { status: 404 })
-        }
-
-        // Soft delete
-        const cliente = await prisma.cliente.update({
-            where: { id: params.id },
-            data: { activo: false }
-        })
-
-        return NextResponse.json(cliente)
+      return successResponse(cliente)
     } catch (error) {
-        console.error('[CLIENTE_DELETE]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

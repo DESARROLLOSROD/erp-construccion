@@ -1,183 +1,191 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  errorResponse,
+  verifyResourceOwnership,
+} from '@/lib/api-utils'
+import { productoUpdateSchema, validateSchema, idSchema } from '@/lib/validations'
 
 export async function GET(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'COMPRAS', 'VENTAS', 'OBRAS', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const productoId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad y obtener producto
+      const isOwner = await verifyResourceOwnership(productoId, context.empresaId, 'producto')
+      if (!isOwner) {
+        return errorResponse('Producto no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
-
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        const producto = await prisma.producto.findFirst({
-            where: {
-                id: params.id,
-                empresaId
-            },
-            include: {
-                categoria: true,
-                unidad: true,
+      const producto = await prisma.producto.findUnique({
+        where: { id: productoId },
+        include: {
+          categoria: {
+            select: {
+              id: true,
+              nombre: true,
+              color: true,
             }
-        })
-
-        if (!producto) {
-            return new NextResponse('Producto no encontrado', { status: 404 })
+          },
+          unidad: {
+            select: {
+              id: true,
+              nombre: true,
+              abreviatura: true,
+            }
+          }
         }
+      })
 
-        const productoConverted = {
-            ...producto,
-            precioCompra: Number(producto.precioCompra),
-            precioVenta: Number(producto.precioVenta),
-            stockMinimo: Number(producto.stockMinimo),
-            stockActual: Number(producto.stockActual),
-        }
+      if (!producto) {
+        return errorResponse('Producto no encontrado', 404)
+      }
 
-        return NextResponse.json(productoConverted)
+      // Convertir Decimals
+      const productoConverted = {
+        ...producto,
+        precioCompra: Number(producto.precioCompra),
+        precioVenta: Number(producto.precioVenta),
+        stockMinimo: Number(producto.stockMinimo),
+        stockActual: Number(producto.stockActual),
+      }
+
+      return successResponse(productoConverted)
     } catch (error) {
-        console.error('[PRODUCTO_GET_ID]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function PUT(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'COMPRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const productoId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad
+      const isOwner = await verifyResourceOwnership(productoId, context.empresaId, 'producto')
+      if (!isOwner) {
+        return errorResponse('Producto no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const body = await req.json()
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      // Validar datos con Zod
+      const validatedData = validateSchema(productoUpdateSchema, body)
 
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        // Verificar que el producto exista y pertenezca a la empresa
+      // Si está cambiando el código, validar que no exista otro
+      if (validatedData.codigo) {
         const existing = await prisma.producto.findFirst({
-            where: { id: params.id, empresaId }
+          where: {
+            empresaId: context.empresaId,
+            codigo: validatedData.codigo,
+            activo: true,
+            NOT: { id: productoId }
+          }
         })
 
-        if (!existing) {
-            return new NextResponse('Producto no encontrado', { status: 404 })
+        if (existing) {
+          return errorResponse('Ya existe otro producto activo con este código', 409)
         }
+      }
 
-        const producto = await prisma.producto.update({
-            where: { id: params.id },
-            data: {
-                codigo: body.codigo?.toUpperCase(),
-                descripcion: body.descripcion,
-                categoriaId: body.categoriaId || null,
-                unidadId: body.unidadId || null,
-                claveSat: body.claveSat,
-                claveUnidadSat: body.claveUnidadSat,
-                precioCompra: body.precioCompra,
-                precioVenta: body.precioVenta,
-                esServicio: body.esServicio,
-                controlStock: body.controlStock,
-                stockMinimo: body.stockMinimo,
-                stockActual: body.stockActual,
-            },
-            include: {
-                categoria: {
-                    select: {
-                        id: true,
-                        nombre: true,
-                        color: true,
-                    }
-                },
-                unidad: {
-                    select: {
-                        id: true,
-                        nombre: true,
-                        abreviatura: true,
-                    }
-                }
+      // Preparar datos para actualización (solo campos presentes)
+      const updateData: any = {}
+
+      if (validatedData.codigo !== undefined) updateData.codigo = validatedData.codigo
+      if (validatedData.descripcion !== undefined) updateData.descripcion = validatedData.descripcion
+      if (validatedData.categoriaId !== undefined) updateData.categoriaId = validatedData.categoriaId
+      if (validatedData.unidadId !== undefined) updateData.unidadId = validatedData.unidadId
+      if (validatedData.claveSat !== undefined) updateData.claveSat = validatedData.claveSat
+      if (validatedData.claveUnidadSat !== undefined) updateData.claveUnidadSat = validatedData.claveUnidadSat
+      if (validatedData.precioCompra !== undefined) updateData.precioCompra = validatedData.precioCompra
+      if (validatedData.precioVenta !== undefined) updateData.precioVenta = validatedData.precioVenta
+      if (validatedData.esServicio !== undefined) updateData.esServicio = validatedData.esServicio
+      if (validatedData.controlStock !== undefined) updateData.controlStock = validatedData.controlStock
+      if (validatedData.stockMinimo !== undefined) updateData.stockMinimo = validatedData.stockMinimo
+      if (validatedData.stockActual !== undefined) updateData.stockActual = validatedData.stockActual
+
+      const producto = await prisma.producto.update({
+        where: { id: productoId },
+        data: updateData,
+        include: {
+          categoria: {
+            select: {
+              id: true,
+              nombre: true,
+              color: true,
             }
-        })
-
-        const productoConverted = {
-            ...producto,
-            precioCompra: Number(producto.precioCompra),
-            precioVenta: Number(producto.precioVenta),
-            stockMinimo: Number(producto.stockMinimo),
-            stockActual: Number(producto.stockActual),
+          },
+          unidad: {
+            select: {
+              id: true,
+              nombre: true,
+              abreviatura: true,
+            }
+          }
         }
+      })
 
-        return NextResponse.json(productoConverted)
+      // Convertir Decimals
+      const productoConverted = {
+        ...producto,
+        precioCompra: Number(producto.precioCompra),
+        precioVenta: Number(producto.precioVenta),
+        stockMinimo: Number(producto.stockMinimo),
+        stockActual: Number(producto.stockActual),
+      }
+
+      return successResponse(productoConverted)
     } catch (error) {
-        console.error('[PRODUCTO_PUT]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function DELETE(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const productoId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad
+      const isOwner = await verifyResourceOwnership(productoId, context.empresaId, 'producto')
+      if (!isOwner) {
+        return errorResponse('Producto no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      // Soft delete (cambiar a inactivo)
+      const producto = await prisma.producto.update({
+        where: { id: productoId },
+        data: { activo: false }
+      })
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      // Convertir Decimals
+      const productoConverted = {
+        ...producto,
+        precioCompra: Number(producto.precioCompra),
+        precioVenta: Number(producto.precioVenta),
+        stockMinimo: Number(producto.stockMinimo),
+        stockActual: Number(producto.stockActual),
+      }
 
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Verificar existencia
-        const existing = await prisma.producto.findFirst({
-            where: { id: params.id, empresaId }
-        })
-
-        if (!existing) {
-            return new NextResponse('Producto no encontrado', { status: 404 })
-        }
-
-        // Soft delete
-        const producto = await prisma.producto.update({
-            where: { id: params.id },
-            data: { activo: false }
-        })
-
-        return NextResponse.json(producto)
+      return successResponse(productoConverted)
     } catch (error) {
-        console.error('[PRODUCTO_DELETE]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

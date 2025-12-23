@@ -1,126 +1,108 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  createdResponse,
+  getPaginationParams,
+  createPaginatedResponse,
+} from '@/lib/api-utils'
+import { clienteQuerySchema, clienteCreateSchema, validateSchema } from '@/lib/validations'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  return withRole(['ADMIN', 'VENTAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const { searchParams } = new URL(req.url)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Validar parámetros de query
+      const query = validateSchema(clienteQuerySchema, {
+        activo: searchParams.get('activo'),
+        page: searchParams.get('page') || '1',
+        limit: searchParams.get('limit') || '20',
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const { skip, take } = getPaginationParams(query.page as number, query.limit as number)
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      // Construir filtros
+      const where: any = {
+        empresaId: context.empresaId,
+      }
 
-        const empresaId = usuario.empresas[0].empresaId
+      if (query.activo !== undefined) {
+        where.activo = query.activo
+      }
 
-        const clientes = await prisma.cliente.findMany({
-            where: {
-                empresaId,
-                activo: true
-            },
-            orderBy: { updatedAt: 'desc' }
-        })
+      // Obtener clientes con paginación
+      const [clientes, total] = await Promise.all([
+        prisma.cliente.findMany({
+          where,
+          orderBy: { updatedAt: 'desc' },
+          skip,
+          take,
+        }),
+        prisma.cliente.count({ where })
+      ])
 
-        return NextResponse.json(clientes)
+      const response = createPaginatedResponse(clientes, total, query.page as number, query.limit as number)
+      return successResponse(response)
     } catch (error) {
-        console.error('[CLIENTES_GET]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  return withRole(['ADMIN', 'VENTAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const body = await req.json()
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Validar datos con Zod
+      const validatedData = validateSchema(clienteCreateSchema, body)
+
+      // Validar duplicados de RFC
+      const existing = await prisma.cliente.findFirst({
+        where: {
+          empresaId: context.empresaId,
+          rfc: validatedData.rfc,
+          activo: true
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Ya existe un cliente activo con este RFC' },
+          { status: 409 }
+        )
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
+      // Crear cliente
+      const cliente = await prisma.cliente.create({
+        data: {
+          empresaId: context.empresaId,
+          codigo: validatedData.codigo,
+          rfc: validatedData.rfc,
+          razonSocial: validatedData.razonSocial,
+          nombreComercial: validatedData.nombreComercial,
+          regimenFiscal: validatedData.regimenFiscal,
+          usoCfdi: validatedData.usoCfdi,
+          calle: validatedData.calle,
+          numExterior: validatedData.numExterior,
+          numInterior: validatedData.numInterior,
+          colonia: validatedData.colonia,
+          codigoPostal: validatedData.codigoPostal,
+          municipio: validatedData.municipio,
+          estado: validatedData.estado,
+          pais: validatedData.pais,
+          email: validatedData.email,
+          telefono: validatedData.telefono,
+          contacto: validatedData.contacto,
         }
+      })
 
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        const {
-            codigo,
-            rfc,
-            razonSocial,
-            nombreComercial,
-            regimenFiscal,
-            usoCfdi,
-            calle,
-            numExterior,
-            numInterior,
-            colonia,
-            codigoPostal,
-            municipio,
-            estado,
-            pais,
-            email,
-            telefono,
-            contacto
-        } = body
-
-        if (!rfc || !razonSocial) {
-            return new NextResponse('RFC y Razón Social son requeridos', { status: 400 })
-        }
-
-        // Validar duplicados
-        const existing = await prisma.cliente.findFirst({
-            where: {
-                empresaId,
-                rfc,
-                activo: true
-            }
-        })
-
-        if (existing) {
-            return new NextResponse('Ya existe un cliente activo con este RFC', { status: 409 })
-        }
-
-        const cliente = await prisma.cliente.create({
-            data: {
-                empresaId,
-                codigo,
-                rfc: rfc.toUpperCase(),
-                razonSocial,
-                nombreComercial,
-                regimenFiscal,
-                usoCfdi,
-                calle,
-                numExterior,
-                numInterior,
-                colonia,
-                codigoPostal,
-                municipio,
-                estado,
-                pais: pais || 'MEX',
-                email,
-                telefono,
-                contacto
-            }
-        })
-
-        return NextResponse.json(cliente)
+      return createdResponse(cliente)
     } catch (error) {
-        console.error('[CLIENTES_POST]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

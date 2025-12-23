@@ -1,153 +1,138 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  errorResponse,
+  verifyResourceOwnership,
+} from '@/lib/api-utils'
+import { proveedorUpdateSchema, validateSchema, idSchema } from '@/lib/validations'
 
 export async function GET(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'COMPRAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const proveedorId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad y obtener proveedor
+      const isOwner = await verifyResourceOwnership(proveedorId, context.empresaId, 'proveedor')
+      if (!isOwner) {
+        return errorResponse('Proveedor no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const proveedor = await prisma.proveedor.findUnique({
+        where: { id: proveedorId }
+      })
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      if (!proveedor) {
+        return errorResponse('Proveedor no encontrado', 404)
+      }
 
-        const empresaId = usuario.empresas[0].empresaId
-
-        const proveedor = await prisma.proveedor.findFirst({
-            where: {
-                id: params.id,
-                empresaId
-            }
-        })
-
-        if (!proveedor) {
-            return new NextResponse('Proveedor no encontrado', { status: 404 })
-        }
-
-        return NextResponse.json(proveedor)
+      return successResponse(proveedor)
     } catch (error) {
-        console.error('[PROVEEDOR_GET_ID]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function PUT(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'COMPRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const proveedorId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad
+      const isOwner = await verifyResourceOwnership(proveedorId, context.empresaId, 'proveedor')
+      if (!isOwner) {
+        return errorResponse('Proveedor no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      const body = await req.json()
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      // Validar datos con Zod
+      const validatedData = validateSchema(proveedorUpdateSchema, body)
 
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        // Verificar que el proveedor exista y pertenezca a la empresa
+      // Si está cambiando el RFC, validar que no exista otro
+      if (validatedData.rfc) {
         const existing = await prisma.proveedor.findFirst({
-            where: { id: params.id, empresaId }
+          where: {
+            empresaId: context.empresaId,
+            rfc: validatedData.rfc,
+            activo: true,
+            NOT: { id: proveedorId }
+          }
         })
 
-        if (!existing) {
-            return new NextResponse('Proveedor no encontrado', { status: 404 })
+        if (existing) {
+          return errorResponse('Ya existe otro proveedor activo con este RFC', 409)
         }
+      }
 
-        const proveedor = await prisma.proveedor.update({
-            where: { id: params.id },
-            data: {
-                codigo: body.codigo,
-                rfc: body.rfc?.toUpperCase(),
-                razonSocial: body.razonSocial,
-                nombreComercial: body.nombreComercial,
-                calle: body.calle,
-                numExterior: body.numExterior,
-                numInterior: body.numInterior,
-                colonia: body.colonia,
-                codigoPostal: body.codigoPostal,
-                municipio: body.municipio,
-                estado: body.estado,
-                pais: body.pais,
-                email: body.email,
-                telefono: body.telefono,
-                contacto: body.contacto,
-                banco: body.banco,
-                cuenta: body.cuenta,
-                clabe: body.clabe,
-            }
-        })
+      // Preparar datos para actualización (solo campos presentes)
+      const updateData: any = {}
 
-        return NextResponse.json(proveedor)
+      if (validatedData.codigo !== undefined) updateData.codigo = validatedData.codigo
+      if (validatedData.rfc !== undefined) updateData.rfc = validatedData.rfc
+      if (validatedData.razonSocial !== undefined) updateData.razonSocial = validatedData.razonSocial
+      if (validatedData.nombreComercial !== undefined) updateData.nombreComercial = validatedData.nombreComercial
+      if (validatedData.calle !== undefined) updateData.calle = validatedData.calle
+      if (validatedData.numExterior !== undefined) updateData.numExterior = validatedData.numExterior
+      if (validatedData.numInterior !== undefined) updateData.numInterior = validatedData.numInterior
+      if (validatedData.colonia !== undefined) updateData.colonia = validatedData.colonia
+      if (validatedData.codigoPostal !== undefined) updateData.codigoPostal = validatedData.codigoPostal
+      if (validatedData.municipio !== undefined) updateData.municipio = validatedData.municipio
+      if (validatedData.estado !== undefined) updateData.estado = validatedData.estado
+      if (validatedData.pais !== undefined) updateData.pais = validatedData.pais
+      if (validatedData.email !== undefined) updateData.email = validatedData.email
+      if (validatedData.telefono !== undefined) updateData.telefono = validatedData.telefono
+      if (validatedData.contacto !== undefined) updateData.contacto = validatedData.contacto
+      if (validatedData.banco !== undefined) updateData.banco = validatedData.banco
+      if (validatedData.cuenta !== undefined) updateData.cuenta = validatedData.cuenta
+      if (validatedData.clabe !== undefined) updateData.clabe = validatedData.clabe
+
+      const proveedor = await prisma.proveedor.update({
+        where: { id: proveedorId },
+        data: updateData,
+      })
+
+      return successResponse(proveedor)
     } catch (error) {
-        console.error('[PROVEEDOR_PUT]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function DELETE(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const proveedorId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
+      // Verificar propiedad
+      const isOwner = await verifyResourceOwnership(proveedorId, context.empresaId, 'proveedor')
+      if (!isOwner) {
+        return errorResponse('Proveedor no encontrado', 404)
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      // Soft delete (cambiar a inactivo)
+      const proveedor = await prisma.proveedor.update({
+        where: { id: proveedorId },
+        data: { activo: false }
+      })
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Verificar existencia
-        const existing = await prisma.proveedor.findFirst({
-            where: { id: params.id, empresaId }
-        })
-
-        if (!existing) {
-            return new NextResponse('Proveedor no encontrado', { status: 404 })
-        }
-
-        // Soft delete
-        const proveedor = await prisma.proveedor.update({
-            where: { id: params.id },
-            data: { activo: false }
-        })
-
-        return NextResponse.json(proveedor)
+      return successResponse(proveedor)
     } catch (error) {
-        console.error('[PROVEEDOR_DELETE]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

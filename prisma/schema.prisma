@@ -190,12 +190,13 @@ model ConceptoPresupuesto {
   cantidad        Decimal  @db.Decimal(18, 4)
   precioUnitario  Decimal  @db.Decimal(18, 4)
   importe         Decimal  @db.Decimal(18, 2) // cantidad * precioUnitario
-  
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   presupuesto     Presupuesto @relation(fields: [presupuestoId], references: [id], onDelete: Cascade)
   unidad          Unidad?     @relation(fields: [unidadId], references: [id])
+  estimaciones    ConceptoEstimacion[]
 
   @@map("conceptos_presupuesto")
 }
@@ -207,17 +208,18 @@ model Estimacion {
   periodo         String          // "2024-01" formato año-mes
   fechaCorte      DateTime
   estado          EstadoEstimacion @default(BORRADOR)
-  
+
   // Montos
   importeBruto    Decimal         @db.Decimal(18, 2)
   amortizacion    Decimal         @default(0) @db.Decimal(18, 2)
   retencion       Decimal         @default(0) @db.Decimal(18, 2)
   importeNeto     Decimal         @db.Decimal(18, 2)
-  
+
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
   obra            Obra            @relation(fields: [obraId], references: [id], onDelete: Cascade)
+  conceptos       ConceptoEstimacion[]
 
   @@unique([obraId, numero])
   @@map("estimaciones")
@@ -231,6 +233,25 @@ enum EstadoEstimacion {
   PAGADA
   RECHAZADA
 }
+
+model ConceptoEstimacion {
+  id                      String   @id @default(cuid())
+  estimacionId            String
+  conceptoPresupuestoId   String
+  cantidadEjecutada       Decimal  @db.Decimal(18, 4) // Cantidad en este período
+  cantidadAcumulada       Decimal  @db.Decimal(18, 4) // Total acumulado
+  importe                 Decimal  @db.Decimal(18, 2) // Importe de este período
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  estimacion              Estimacion @relation(fields: [estimacionId], references: [id], onDelete: Cascade)
+  conceptoPresupuesto     ConceptoPresupuesto @relation(fields: [conceptoPresupuestoId], references: [id])
+
+  @@unique([estimacionId, conceptoPresupuestoId])
+  @@map("conceptos_estimacion")
+}
+
 
 // ============================================
 // MÓDULO: Catálogos

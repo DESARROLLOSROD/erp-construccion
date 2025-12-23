@@ -6,7 +6,12 @@
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\ndocs: Add comprehensive development guide and project documentation\n\n- Created DEVELOPMENT.md with architecture patterns and best practices\n- Documented Server/Client Component patterns\n- Added Multi-tenancy implementation guidelines\n- Included API Routes standard structure\n- Provided TypeScript type patterns\n- Added troubleshooting section\n- Documented performance best practices\n- Included security guidelines\n\nThis guide ensures consistency and maintainability across the codebase.\n\n🤖 Generated with Claude Code \\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\ndocs: Add comprehensive development guide and project documentation\n\n- Created DEVELOPMENT.md with architecture patterns and best practices\n- Documented Server/Client Component patterns\n- Added Multi-tenancy implementation guidelines\n- Included API Routes standard structure\n- Provided TypeScript type patterns\n- Added troubleshooting section\n- Documented performance best practices\n- Included security guidelines\n\nThis guide ensures consistency and maintainability across the codebase.\n\n🤖 Generated with Claude Code \\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npm run test:run:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(npx prisma db pull:*)",
+      "Bash(ping:*)"
     ]
   }
 }

@@ -1,163 +1,163 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  createdResponse,
+  getPaginationParams,
+  createPaginatedResponse,
+  verifyResourceOwnership,
+} from '@/lib/api-utils'
+import { obraQuerySchema, obraCreateSchema, validateSchema } from '@/lib/validations'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  return withRole(['ADMIN', 'OBRAS', 'VENTAS', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const { searchParams } = new URL(req.url)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Validar parámetros de query
+      const query = validateSchema(obraQuerySchema, {
+        estado: searchParams.get('estado'),
+        clienteId: searchParams.get('clienteId'),
+        page: searchParams.get('page') || '1',
+        limit: searchParams.get('limit') || '20',
+      })
+
+      const { skip, take } = getPaginationParams(query.page as number, query.limit as number)
+
+      // Construir filtros
+      const where: any = {
+        empresaId: context.empresaId,
+      }
+
+      if (query.estado) {
+        where.estado = query.estado
+      }
+
+      if (query.clienteId) {
+        // Verificar que el cliente pertenezca a la empresa
+        const isOwner = await verifyResourceOwnership(
+          query.clienteId,
+          context.empresaId,
+          'cliente'
+        )
+        if (!isOwner) {
+          return NextResponse.json(
+            { error: 'Cliente no encontrado o no pertenece a tu empresa' },
+            { status: 404 }
+          )
         }
+        where.clienteId = query.clienteId
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
-
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Obtener parámetros de query
-        const { searchParams } = new URL(request.url)
-        const estado = searchParams.get('estado')
-        const clienteId = searchParams.get('clienteId')
-
-        const obras = await prisma.obra.findMany({
-            where: {
-                empresaId,
-                ...(estado && { estado: estado as any }),
-                ...(clienteId && { clienteId }),
+      // Obtener obras con paginación
+      const [obras, total] = await Promise.all([
+        prisma.obra.findMany({
+          where,
+          include: {
+            cliente: {
+              select: {
+                id: true,
+                rfc: true,
+                razonSocial: true,
+                nombreComercial: true,
+              }
             },
-            include: {
-                cliente: {
-                    select: {
-                        id: true,
-                        rfc: true,
-                        razonSocial: true,
-                        nombreComercial: true,
-                    }
-                },
-                _count: {
-                    select: {
-                        presupuestos: true,
-                        estimaciones: true,
-                        contratos: true,
-                    }
-                }
-            },
-            orderBy: { updatedAt: 'desc' }
-        })
+            _count: {
+              select: {
+                presupuestos: true,
+                estimaciones: true,
+                contratos: true,
+              }
+            }
+          },
+          orderBy: { updatedAt: 'desc' },
+          skip,
+          take,
+        }),
+        prisma.obra.count({ where })
+      ])
 
-        return NextResponse.json(obras)
+      const response = createPaginatedResponse(obras, total, query.page as number, query.limit as number)
+      return successResponse(response)
     } catch (error) {
-        console.error('[OBRAS_GET]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  return withRole(['ADMIN', 'OBRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const body = await req.json()
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Validar datos con Zod
+      const validatedData = validateSchema(obraCreateSchema, body)
+
+      // Validar duplicados de código
+      const existing = await prisma.obra.findFirst({
+        where: {
+          empresaId: context.empresaId,
+          codigo: validatedData.codigo,
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (existing) {
+        return NextResponse.json(
+          { error: 'Ya existe una obra con este código' },
+          { status: 409 }
+        )
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
+      // Validar que el cliente pertenezca a la misma empresa
+      if (validatedData.clienteId) {
+        const isOwner = await verifyResourceOwnership(
+          validatedData.clienteId,
+          context.empresaId,
+          'cliente'
+        )
+        if (!isOwner) {
+          return NextResponse.json(
+            { error: 'Cliente no encontrado o no pertenece a tu empresa' },
+            { status: 404 }
+          )
         }
+      }
 
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        const {
-            codigo,
-            nombre,
-            descripcion,
-            ubicacion,
-            estado,
-            tipoContrato,
-            fechaInicio,
-            fechaFinProgramada,
-            montoContrato,
-            anticipoPct,
-            retencionPct,
-            clienteId
-        } = body
-
-        // Validaciones básicas
-        if (!codigo || !nombre) {
-            return new NextResponse('Código y Nombre son requeridos', { status: 400 })
-        }
-
-        // Validar duplicados de código
-        const existing = await prisma.obra.findFirst({
-            where: {
-                empresaId,
-                codigo,
+      // Crear obra
+      const obra = await prisma.obra.create({
+        data: {
+          empresaId: context.empresaId,
+          codigo: validatedData.codigo.toUpperCase(),
+          nombre: validatedData.nombre,
+          descripcion: validatedData.descripcion,
+          ubicacion: validatedData.ubicacion,
+          estado: validatedData.estado,
+          tipoContrato: validatedData.tipoContrato,
+          fechaInicio: validatedData.fechaInicio ? new Date(validatedData.fechaInicio) : null,
+          fechaFinProgramada: validatedData.fechaFinProgramada ? new Date(validatedData.fechaFinProgramada) : null,
+          fechaFinReal: validatedData.fechaFinReal ? new Date(validatedData.fechaFinReal) : null,
+          montoContrato: validatedData.montoContrato,
+          anticipoPct: validatedData.anticipoPct,
+          retencionPct: validatedData.retencionPct,
+          clienteId: validatedData.clienteId || null,
+        },
+        include: {
+          cliente: {
+            select: {
+              id: true,
+              rfc: true,
+              razonSocial: true,
+              nombreComercial: true,
             }
-        })
-
-        if (existing) {
-            return new NextResponse('Ya existe una obra con este código', { status: 409 })
+          }
         }
+      })
 
-        // Validar que el cliente pertenezca a la misma empresa
-        if (clienteId) {
-            const cliente = await prisma.cliente.findFirst({
-                where: {
-                    id: clienteId,
-                    empresaId
-                }
-            })
-
-            if (!cliente) {
-                return new NextResponse('Cliente no encontrado o no pertenece a tu empresa', { status: 404 })
-            }
-        }
-
-        const obra = await prisma.obra.create({
-            data: {
-                empresaId,
-                codigo: codigo.toUpperCase(),
-                nombre,
-                descripcion,
-                ubicacion,
-                estado: estado || 'EN_PROCESO',
-                tipoContrato: tipoContrato || 'PRECIO_ALZADO',
-                fechaInicio: fechaInicio ? new Date(fechaInicio) : null,
-                fechaFinProgramada: fechaFinProgramada ? new Date(fechaFinProgramada) : null,
-                montoContrato: montoContrato || 0,
-                anticipoPct: anticipoPct || 0,
-                retencionPct: retencionPct || 0,
-                clienteId: clienteId || null,
-            },
-            include: {
-                cliente: {
-                    select: {
-                        id: true,
-                        rfc: true,
-                        razonSocial: true,
-                        nombreComercial: true,
-                    }
-                }
-            }
-        })
-
-        return NextResponse.json(obra)
+      return createdResponse(obra)
     } catch (error) {
-        console.error('[OBRAS_POST]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
