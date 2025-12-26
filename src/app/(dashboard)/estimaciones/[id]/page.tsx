@@ -15,7 +15,11 @@ import {
   Building2,
   Calendar,
   TrendingUp,
+  Download,
+  Send,
+  Ban
 } from 'lucide-react'
+import { generarEstimacionPDF } from '@/lib/pdf/estimacion-pdf'
 
 interface ConceptoEstimacion {
   id: string
@@ -59,6 +63,8 @@ interface Estimacion {
     cliente: {
       razonSocial: string
       nombreComercial: string | null
+      rfc: string
+      direccion?: string
     } | null
   }
   conceptos: ConceptoEstimacion[]
@@ -89,6 +95,7 @@ export default function EstimacionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
 
   useEffect(() => {
     fetchEstimacion()
@@ -131,6 +138,70 @@ export default function EstimacionDetailPage() {
     }
   }
 
+  const handleUpdateStatus = async (newStatus: string) => {
+    try {
+      setUpdatingStatus(true)
+      const response = await fetch(`/api/estimaciones/${params.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado: newStatus })
+      })
+
+      if (!response.ok) throw new Error('Error actualizando estado')
+
+      await fetchEstimacion()
+    } catch (error) {
+      console.error('Error:', error)
+      alert('Error al actualizar el estado')
+    } finally {
+      setUpdatingStatus(false)
+    }
+  }
+
+  const handleDownloadPDF = () => {
+    if (!estimacion) return
+
+    try {
+      const pdfData = {
+        numero: estimacion.numero,
+        periodo: estimacion.periodo,
+        fechaCorte: estimacion.fechaCorte,
+        importeBruto: estimacion.importeBruto,
+        amortizacion: estimacion.amortizacion,
+        retencion: estimacion.retencion,
+        importeNeto: estimacion.importeNeto,
+        conceptos: estimacion.conceptos.map(c => ({
+          clave: c.conceptoPresupuesto.clave,
+          descripcion: c.conceptoPresupuesto.descripcion,
+          unidad: c.conceptoPresupuesto.unidad?.abreviatura || '-',
+          cantidadEjecutada: c.cantidadEjecutada,
+          cantidadAcumulada: c.cantidadAcumulada,
+          precioUnitario: c.conceptoPresupuesto.precioUnitario,
+          importe: c.importe
+        }))
+      }
+
+      const empresaInfo = {
+        nombre: 'ERP Construcción MX',
+        razonSocial: 'Empresa Demo S.A. de C.V.',
+        rfc: 'DEMO010101ABC',
+      }
+
+      const obraInfo = {
+        codigo: estimacion.obra.codigo,
+        nombre: estimacion.obra.nombre,
+        cliente: estimacion.obra.cliente ? estimacion.obra.cliente.razonSocial : undefined
+      }
+
+      const doc = generarEstimacionPDF(pdfData, empresaInfo, obraInfo)
+      doc.save(`Estimacion_${estimacion.obra.codigo}_No${estimacion.numero}.pdf`)
+
+    } catch (error) {
+      console.error('Error generando PDF:', error)
+      alert('Error al generar el PDF')
+    }
+  }
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('es-MX', {
       style: 'currency',
@@ -153,34 +224,8 @@ export default function EstimacionDetailPage() {
     }).format(value)
   }
 
-  if (loading) {
-    return (
-      <div className="p-6">
-        <div className="text-center py-12">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <p className="text-gray-600 mt-4">Cargando estimación...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!estimacion) {
-    return (
-      <div className="p-6">
-        <div className="text-center py-12">
-          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-600">Estimación no encontrada</p>
-          <Link
-            href="/estimaciones"
-            className="mt-4 inline-flex items-center gap-2 text-blue-600 hover:text-blue-700"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Volver a estimaciones
-          </Link>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <div className="p-8 text-center">Cargando...</div>
+  if (!estimacion) return <div className="p-8 text-center">Estimación no encontrada</div>
 
   const Icon = ESTADO_ICONS[estimacion.estado]
 
@@ -199,16 +244,15 @@ export default function EstimacionDetailPage() {
 
       {/* Header */}
       <div className="mb-6">
-        <div className="flex justify-between items-start">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-3xl font-bold text-gray-900">
                 Estimación #{estimacion.numero}
               </h1>
               <span
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
-                  ESTADO_COLORS[estimacion.estado]
-                }`}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${ESTADO_COLORS[estimacion.estado]
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 {estimacion.estado}
@@ -220,24 +264,79 @@ export default function EstimacionDetailPage() {
           </div>
 
           {/* Actions */}
-          {estimacion.estado === 'BORRADOR' && (
-            <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              PDF
+            </button>
+
+            {/* Workflow Actions */}
+            {estimacion.estado === 'BORRADOR' && (
+              <>
+                <button
+                  onClick={() => router.push(`/estimaciones/${estimacion.id}/editar`)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleUpdateStatus('ENVIADA')}
+                  disabled={updatingStatus}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Send className="w-4 h-4" />
+                  Enviar
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Eliminar
+                </button>
+              </>
+            )}
+
+            {estimacion.estado === 'ENVIADA' && (
+              <>
+                <button
+                  onClick={() => handleUpdateStatus('APROBADA')}
+                  disabled={updatingStatus}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Aprobar
+                </button>
+                <button
+                  onClick={() => handleUpdateStatus('RECHAZADA')}
+                  disabled={updatingStatus}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Ban className="w-4 h-4" />
+                  Rechazar
+                </button>
+              </>
+            )}
+
+            {estimacion.estado === 'APROBADA' && (
               <button
-                onClick={() => router.push(`/estimaciones/${estimacion.id}/editar`)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                onClick={() => handleUpdateStatus('PAGADA')}
+                disabled={updatingStatus}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
               >
-                <Edit className="w-4 h-4" />
-                Editar
+                <DollarSign className="w-4 h-4" />
+                Marcar Pagada
               </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                Eliminar
-              </button>
-            </div>
-          )}
+            )}
+
+            {/* Allow viewing edit mode even if approved (read only?) or allow reverts? 
+                For now restricted to Borrador as per best practice. 
+            */}
+          </div>
         </div>
       </div>
 
@@ -256,7 +355,7 @@ export default function EstimacionDetailPage() {
                 Cliente: {estimacion.obra.cliente.nombreComercial || estimacion.obra.cliente.razonSocial}
               </p>
             )}
-            <div className="grid grid-cols-3 gap-4 mt-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
               <div>
                 <p className="text-xs text-gray-500">Monto Contrato</p>
                 <p className="text-sm font-semibold text-gray-900">
@@ -402,15 +501,14 @@ export default function EstimacionDetailPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
                         <span
-                          className={`inline-flex px-2 py-1 rounded text-xs font-medium ${
-                            porcentajeAvance >= 100
+                          className={`inline-flex px-2 py-1 rounded text-xs font-medium ${porcentajeAvance >= 100
                               ? 'bg-green-100 text-green-800'
                               : porcentajeAvance >= 75
-                              ? 'bg-blue-100 text-blue-800'
-                              : porcentajeAvance >= 50
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
+                                ? 'bg-blue-100 text-blue-800'
+                                : porcentajeAvance >= 50
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-gray-100 text-gray-800'
+                            }`}
                         >
                           {formatNumber(porcentajeAvance, 1)}%
                         </span>

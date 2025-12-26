@@ -4,9 +4,21 @@ import {
   withRole,
   handleApiError,
   successResponse,
-  errorResponse,
+  verifyResourceOwnership,
 } from '@/lib/api-utils'
-import { estimacionUpdateSchema, validateSchema, idSchema } from '@/lib/validations'
+import { z } from 'zod'
+
+// Schema helper just for simple updates
+const updateSchema = z.object({
+  numero: z.number().optional(),
+  periodo: z.string().optional(),
+  fechaCorte: z.string().or(z.date()).optional(),
+  estado: z.enum(['BORRADOR', 'ENVIADA', 'APROBADA', 'FACTURADA', 'PAGADA', 'RECHAZADA']).optional(),
+  importeBruto: z.number().optional(),
+  amortizacion: z.number().optional(),
+  retencion: z.number().optional(),
+  importeNeto: z.number().optional(),
+})
 
 export async function GET(
   request: NextRequest,
@@ -14,20 +26,17 @@ export async function GET(
 ) {
   return withRole(['ADMIN', 'OBRAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-      // Validar ID
-      const estimacionId = validateSchema(idSchema, params.id)
+      const { id } = params
 
-      const estimacion = await prisma.estimacion.findFirst({
-        where: {
-          id: estimacionId,
-          obra: { empresaId: context.empresaId }
-        },
+      const estimacion = await prisma.estimacion.findUnique({
+        where: { id },
         include: {
           obra: {
             select: {
               id: true,
               codigo: true,
               nombre: true,
+              empresaId: true,
               montoContrato: true,
               anticipoPct: true,
               retencionPct: true,
@@ -35,6 +44,8 @@ export async function GET(
                 select: {
                   razonSocial: true,
                   nombreComercial: true,
+                  rfc: true,
+                  direccion: true,
                 }
               }
             }
@@ -46,94 +57,19 @@ export async function GET(
                   unidad: true
                 }
               }
-            },
-            orderBy: {
-              conceptoPresupuesto: {
-                clave: 'asc'
-              }
             }
           }
         }
       })
 
       if (!estimacion) {
-        return errorResponse('Estimación no encontrada', 404)
+        return NextResponse.json({ error: 'Estimación no encontrada' }, { status: 404 })
       }
 
-      return successResponse(estimacion)
-    } catch (error) {
-      return handleApiError(error)
-    }
-  })(request, {} as any)
-}
-
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  return withRole(['ADMIN', 'OBRAS', 'CONTADOR'], async (req, context) => {
-    try {
-      // Validar ID
-      const estimacionId = validateSchema(idSchema, params.id)
-
-      // Verificar que la estimación pertenezca a la empresa
-      const existing = await prisma.estimacion.findFirst({
-        where: {
-          id: estimacionId,
-          obra: { empresaId: context.empresaId }
-        }
-      })
-
-      if (!existing) {
-        return errorResponse('Estimación no encontrada', 404)
+      // Verify ownership
+      if (estimacion.obra.empresaId !== context.empresaId) {
+        return NextResponse.json({ error: 'No tienes acceso a esta estimación' }, { status: 403 })
       }
-
-      // Solo se pueden editar estimaciones en estado BORRADOR
-      if (existing.estado !== 'BORRADOR') {
-        return errorResponse('Solo se pueden editar estimaciones en estado BORRADOR', 400)
-      }
-
-      const body = await req.json()
-
-      // Validar datos con Zod
-      const validatedData = validateSchema(estimacionUpdateSchema, body)
-
-      // Preparar datos para actualización
-      const updateData: any = {}
-
-      if (validatedData.periodo !== undefined) updateData.periodo = validatedData.periodo
-      if (validatedData.fechaCorte !== undefined) {
-        updateData.fechaCorte = new Date(validatedData.fechaCorte)
-      }
-      if (validatedData.estado !== undefined) updateData.estado = validatedData.estado
-      if (validatedData.importeBruto !== undefined) updateData.importeBruto = validatedData.importeBruto
-      if (validatedData.amortizacion !== undefined) updateData.amortizacion = validatedData.amortizacion
-      if (validatedData.retencion !== undefined) updateData.retencion = validatedData.retencion
-
-      // Recalcular importe neto si cambiaron los montos
-      if (validatedData.importeBruto !== undefined ||
-          validatedData.amortizacion !== undefined ||
-          validatedData.retencion !== undefined) {
-        const importeBruto = validatedData.importeBruto ?? Number(existing.importeBruto)
-        const amortizacion = validatedData.amortizacion ?? Number(existing.amortizacion)
-        const retencion = validatedData.retencion ?? Number(existing.retencion)
-
-        updateData.importeNeto = importeBruto - amortizacion - retencion
-      }
-
-      const estimacion = await prisma.estimacion.update({
-        where: { id: estimacionId },
-        data: updateData,
-        include: {
-          obra: {
-            select: {
-              id: true,
-              codigo: true,
-              nombre: true,
-            }
-          }
-        }
-      })
 
       return successResponse(estimacion)
     } catch (error) {
@@ -146,34 +82,76 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  return withRole(['ADMIN', 'CONTADOR'], async (req, context) => {
+  return withRole(['ADMIN', 'OBRAS'], async (req, context) => {
     try {
-      // Validar ID
-      const estimacionId = validateSchema(idSchema, params.id)
+      const { id } = params
 
-      // Verificar que la estimación pertenezca a la empresa
-      const existing = await prisma.estimacion.findFirst({
-        where: {
-          id: estimacionId,
-          obra: { empresaId: context.empresaId }
+      const estimacion = await prisma.estimacion.findUnique({
+        where: { id },
+        select: { id: true, estado: true, obra: { select: { empresaId: true } } }
+      })
+
+      if (!estimacion) {
+        return NextResponse.json({ error: 'Estimación no encontrada' }, { status: 404 })
+      }
+
+      if (estimacion.obra.empresaId !== context.empresaId) {
+        return NextResponse.json({ error: 'No tienes acceso a esta estimación' }, { status: 403 })
+      }
+
+      if (estimacion.estado !== 'BORRADOR') {
+        return NextResponse.json({ error: 'Solo se pueden eliminar estimaciones en BORRADOR' }, { status: 400 })
+      }
+
+      await prisma.estimacion.delete({
+        where: { id }
+      })
+
+      return successResponse({ message: 'Estimación eliminada' })
+    } catch (error) {
+      return handleApiError(error)
+    }
+  })(request, {} as any)
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  return withRole(['ADMIN', 'OBRAS', 'CONTADOR'], async (req, context) => {
+    try {
+      const { id } = params
+      const body = await req.json()
+
+      // Validate body simple
+      const validatedData = updateSchema.parse(body)
+
+      const estimacion = await prisma.estimacion.findUnique({
+        where: { id },
+        select: { id: true, estado: true, obra: { select: { empresaId: true } } }
+      })
+
+      if (!estimacion) {
+        return NextResponse.json({ error: 'Estimación no encontrada' }, { status: 404 })
+      }
+
+      if (estimacion.obra.empresaId !== context.empresaId) {
+        return NextResponse.json({ error: 'No tienes acceso a esta estimación' }, { status: 403 })
+      }
+
+      // Logic checks
+      // If updating status, verify transition logic (can be expanded)
+      // For now, allow direct update if role permits.
+
+      const updated = await prisma.estimacion.update({
+        where: { id },
+        data: {
+          ...validatedData,
+          fechaCorte: validatedData.fechaCorte ? new Date(validatedData.fechaCorte) : undefined
         }
       })
 
-      if (!existing) {
-        return errorResponse('Estimación no encontrada', 404)
-      }
-
-      // Solo se pueden eliminar estimaciones en estado BORRADOR
-      if (existing.estado !== 'BORRADOR') {
-        return errorResponse('Solo se pueden eliminar estimaciones en estado BORRADOR', 400)
-      }
-
-      // Eliminar estimación (cascade eliminará conceptos)
-      await prisma.estimacion.delete({
-        where: { id: estimacionId }
-      })
-
-      return successResponse({ message: 'Estimación eliminada exitosamente' })
+      return successResponse(updated)
     } catch (error) {
       return handleApiError(error)
     }

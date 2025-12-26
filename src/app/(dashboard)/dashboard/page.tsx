@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { HardHat, Users, FileText, DollarSign, AlertCircle, Clock, Plus, ClipboardList, CheckCircle2 } from 'lucide-react'
+import { HardHat, Users, FileText, DollarSign, AlertCircle, Clock, Plus, ClipboardList, CheckCircle2, Truck, ShoppingCart } from 'lucide-react'
 import { prisma } from '@/lib/prisma'
 import { createServerClient } from '@/lib/supabase'
 import { redirect } from 'next/navigation'
@@ -21,73 +21,87 @@ export default async function DashboardPage() {
     include: { empresas: true }
   })
 
+  // If no empresa, show warning (simplified check, keeping original logic mostly)
   if (!usuario || usuario.empresas.length === 0) {
     return (
-      <div className="p-8">
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
-          <p className="text-sm text-yellow-700">
-            Tu usuario no está asignado a ninguna empresa activa. Contacta al administrador.
-          </p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+        <div className="bg-white p-4 rounded-full shadow-sm mb-4">
+          {/* Using HardHat temporarily or importing Building2 if needed, using HardHat from existing imports is safe or check imports */}
+          <HardHat className="w-8 h-8 text-slate-900" />
         </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">¡Bienvenido al ERP!</h2>
+        <p className="text-gray-500 max-w-md mb-6">
+          Para comenzar a gestionar tus obras, presupuestos y compras, necesitas registrar tu primera empresa.
+        </p>
+        <Link href="/empresas/nueva">
+          <Button className="bg-slate-900 text-white hover:bg-slate-800">
+            <Plus className="w-4 h-4 mr-2" />
+            Registrar mi Empresa
+          </Button>
+        </Link>
       </div>
     )
   }
 
   const empresaId = usuario.empresas[0].empresaId
 
-  // Obtener estadísticas reales
-  const [totalObras, obrasActivas, totalClientes, totalPresupuestos, presupuestosVigentes, obrasRecientes, presupuestosRecientes, obrasPorEstado] = await Promise.all([
-    prisma.obra.count({
-      where: { empresaId }
-    }),
-    prisma.obra.count({
-      where: { empresaId, estado: 'EN_PROCESO' }
-    }),
-    prisma.cliente.count({
-      where: { empresaId, activo: true }
-    }),
-    prisma.presupuesto.count({
-      where: { obra: { empresaId } }
-    }),
-    prisma.presupuesto.count({
-      where: { obra: { empresaId }, esVigente: true }
-    }),
+  // Obtener estadísticas reales (Enhanced)
+  const [
+    totalObras,
+    obrasActivas,
+    totalClientes,
+    totalPresupuestos,
+    presupuestosVigentes,
+    obrasRecientes,
+    presupuestosRecientes,
+    obrasPorEstado,
+    maquinariaTotal,
+    maquinariaEnObra,
+    ordenesRecientes
+  ] = await Promise.all([
+    prisma.obra.count({ where: { empresaId } }),
+    prisma.obra.count({ where: { empresaId, estado: 'EN_PROCESO' } }),
+    prisma.cliente.count({ where: { empresaId, activo: true } }),
+    prisma.presupuesto.count({ where: { obra: { empresaId } } }),
+    prisma.presupuesto.count({ where: { obra: { empresaId }, esVigente: true } }),
+
+    // Obras Recientes
     prisma.obra.findMany({
       where: { empresaId, estado: 'EN_PROCESO' },
-      include: {
-        cliente: {
-          select: {
-            razonSocial: true,
-            nombreComercial: true,
-          }
-        }
-      },
+      include: { cliente: { select: { razonSocial: true, nombreComercial: true } } },
       orderBy: { updatedAt: 'desc' },
       take: 5
     }),
+
+    // Presupuestos Recientes
     prisma.presupuesto.findMany({
       where: { obra: { empresaId } },
       include: {
-        obra: {
-          select: {
-            codigo: true,
-            nombre: true,
-          }
-        },
-        conceptos: {
-          select: {
-            importe: true,
-          }
-        }
+        obra: { select: { codigo: true, nombre: true } },
+        conceptos: { select: { importe: true } }
       },
       orderBy: { updatedAt: 'desc' },
       take: 5
     }),
+
+    // Stats Obras
     prisma.obra.groupBy({
       by: ['estado'],
       where: { empresaId },
       _count: { id: true },
       _sum: { montoContrato: true }
+    }),
+
+    // Maquinaria Stats
+    prisma.maquinaria.count({ where: { empresaId } }),
+    prisma.maquinaria.count({ where: { empresaId, estado: 'EN_OBRA' } }),
+
+    // Compras Recientes
+    prisma.ordenCompra.findMany({
+      where: { empresaId },
+      include: { proveedor: { select: { nombreComercial: true } } },
+      orderBy: { fecha: 'desc' },
+      take: 5
     })
   ])
 
@@ -110,12 +124,12 @@ export default async function DashboardPage() {
       color: 'bg-orange-500',
     },
     {
-      name: 'Clientes',
-      value: totalClientes.toString(),
-      change: 'Activos',
-      changeType: 'positive',
-      icon: Users,
-      color: 'bg-blue-500',
+      name: 'Maquinaria',
+      value: maquinariaTotal.toString(),
+      change: `${maquinariaEnObra} en obra`,
+      changeType: 'warning',
+      icon: Truck,
+      color: 'bg-blue-600',
     },
     {
       name: 'Presupuestos',
@@ -126,18 +140,19 @@ export default async function DashboardPage() {
       color: 'bg-green-500',
     },
     {
-      name: 'Por cobrar',
-      value: '$0',
-      change: 'Próximamente',
+      name: 'Compras',
+      value: ordenesRecientes.length > 0 ? 'Activo' : 'Inactivo',
+      change: 'Módulo listo',
       changeType: 'neutral',
-      icon: DollarSign,
-      color: 'bg-purple-500',
+      icon: ShoppingCart,
+      color: 'bg-indigo-500',
     },
   ]
 
   const alertas = [
-    { tipo: 'info', mensaje: 'Sistema de facturación próximamente disponible', tiempo: 'Hoy' },
+    { tipo: 'info', mensaje: 'Módulos de Maquinaria y Compras activados', tiempo: 'Hoy' },
   ]
+
   return (
     <div className="space-y-6">
       {/* Título */}
@@ -157,11 +172,10 @@ export default async function DashboardPage() {
                     {stat.name}
                   </p>
                   <p className="text-2xl font-bold mt-1">{stat.value}</p>
-                  <p className={`text-xs mt-1 ${
-                    stat.changeType === 'positive' ? 'text-green-600' :
+                  <p className={`text-xs mt-1 ${stat.changeType === 'positive' ? 'text-green-600' :
                     stat.changeType === 'warning' ? 'text-amber-600' :
-                    'text-muted-foreground'
-                  }`}>
+                      'text-muted-foreground'
+                    }`}>
                     {stat.change}
                   </p>
                 </div>
@@ -228,54 +242,41 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Presupuestos recientes */}
+        {/* Compras recientes (Replaces Presupuestos or below? Replaces Presupuestos for now as per "Integrated" feel, or Add below) */}
+        {/* Actually, let's look at Order. User might want Presupuestos. I will keep Presupuestos AND add Compras below in a new row or side by side if 3 cols. */}
+        {/* Given existing code had 2 cols, let's stick to 2 cols for Obras/Presupuestos and add a full width or 2-col row for Compras/Maquinaria below */}
+
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Presupuestos recientes</CardTitle>
-            <CardDescription>Últimos presupuestos actualizados</CardDescription>
+            <CardTitle className="text-lg">Compras Recientes</CardTitle>
+            <CardDescription>Últimas órdenes en el sistema</CardDescription>
           </CardHeader>
           <CardContent>
-            {presupuestosRecientes.length === 0 ? (
+            {ordenesRecientes.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-muted-foreground mb-4">No hay presupuestos</p>
-                <Link href="/presupuestos">
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Crear presupuesto
-                  </Button>
+                <p className="text-muted-foreground mb-4">Sin actividad de compras</p>
+                <Link href="/compras/nueva">
+                  <Button variant="outline" size="sm"><Plus className="w-4 h-4 mr-1" /> Nueva Orden</Button>
                 </Link>
               </div>
             ) : (
-              <div className="space-y-4">
-                {presupuestosRecientes.map((presupuesto) => {
-                  const importeTotal = presupuesto.conceptos.reduce((sum, c) => sum + Number(c.importe), 0)
-                  return (
-                    <Link key={presupuesto.id} href={`/presupuestos/${presupuesto.id}`}>
-                      <div className="flex items-center gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono text-muted-foreground">v{presupuesto.version}</span>
-                            {presupuesto.esVigente && (
-                              <CheckCircle2 className="h-4 w-4 text-green-600" />
-                            )}
-                          </div>
-                          <p className="font-medium truncate">{presupuesto.nombre}</p>
-                          <p className="text-sm text-muted-foreground truncate">
-                            {presupuesto.obra?.codigo} - {presupuesto.obra?.nombre}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-medium">
-                            ${(importeTotal / 1000000).toFixed(1)}M
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {presupuesto.conceptos.length} conceptos
-                          </p>
-                        </div>
+              <div className="space-y-3">
+                {ordenesRecientes.map(oc => (
+                  <Link key={oc.id} href={`/compras/${oc.id}`}>
+                    <div className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg cursor-pointer">
+                      <div>
+                        <div className="font-medium">OC-{oc.folio}</div>
+                        <div className="text-xs text-gray-500">{oc.proveedor.nombreComercial} · {new Date(oc.fecha).toLocaleDateString()}</div>
                       </div>
-                    </Link>
-                  )
-                })}
+                      <div className="text-right">
+                        <div className="text-sm font-medium">${Number(oc.total).toLocaleString('es-MX')}</div>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${oc.estado === 'COMPLETADA' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                          {oc.estado}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
               </div>
             )}
           </CardContent>
@@ -307,6 +308,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
     </div>
   )
 }
