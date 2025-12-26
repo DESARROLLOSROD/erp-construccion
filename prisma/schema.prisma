@@ -43,6 +43,8 @@ model Empresa {
   ordenesCompra  OrdenCompra[]
   CuentaBancaria CuentaBancaria[]
   facturas       Factura[]
+  cuentasContables CuentaContable[]
+  polizas          Poliza[]
 
   @@map("empresas")
 }
@@ -752,4 +754,82 @@ model DetalleFactura {
 
   @@map("detalles_factura")
 }
+
+// ============================================
+// MÓDULO: Contabilidad (NUEVO)
+// ============================================
+
+model CuentaContable {
+  id        String @id @default(cuid())
+  empresaId String
+
+  codigo String
+  nombre String
+  tipo   TipoCuenta
+  nivel  Int        @default(1)
+
+  padreId String?
+  padre   CuentaContable?  @relation("JerarquiaCuentas", fields: [padreId], references: [id])
+  hijos   CuentaContable[] @relation("JerarquiaCuentas")
+
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa  Empresa         @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  detalles DetallePoliza[]
+
+  @@unique([empresaId, codigo])
+  @@map("cuentas_contables")
+}
+
+enum TipoCuenta {
+  ACTIVO
+  PASIVO
+  CAPITAL
+  INGRESOS
+  EGRESOS
+  ORDEN
+}
+
+model Poliza {
+  id        String @id @default(cuid())
+  empresaId String
+
+  tipo     TipoPoliza
+  folio    Int
+  fecha    DateTime   @default(now())
+  concepto String
+
+  cuadrada Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa  Empresa         @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  detalles DetallePoliza[]
+
+  @@unique([empresaId, tipo, folio])
+  @@map("polizas")
+}
+
+enum TipoPoliza {
+  DIARIO
+  INGRESO
+  EGRESO
+}
+
+model DetallePoliza {
+  id       String @id @default(cuid())
+  polizaId String
+  cuentaId String
+
+  descripcion String?
+  debe        Decimal @default(0) @db.Decimal(18, 2)
+  haber       Decimal @default(0) @db.Decimal(18, 2)
+
+  poliza    Poliza         @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  cuenta    CuentaContable @relation(fields: [cuentaId], references: [id])
+
+  @@map("detalles_poliza")
 }
