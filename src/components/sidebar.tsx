@@ -20,7 +20,8 @@ import {
   Search,
   FileCheck,
   BarChart3,
-  Archive
+  Archive,
+  Banknote
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui'
@@ -36,6 +37,7 @@ const navigation = [
   { name: 'Compras', href: '/compras', icon: FileCheck },
   { name: 'Inventario', href: '/inventario/salidas', icon: Archive },
   { name: 'Tesorería', href: '/tesoreria', icon: Wallet },
+  { name: 'Nómina', href: '/nomina', icon: Banknote },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Proveedores', href: '/proveedores', icon: Truck },
   { name: 'Productos', href: '/productos', icon: Package },

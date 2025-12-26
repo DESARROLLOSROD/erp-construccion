@@ -46,6 +46,8 @@ model Empresa {
   facturas       Factura[]
   cuentasContables CuentaContable[]
   polizas          Poliza[]
+  empleados        Empleado[]
+  periodosNomina   PeriodoNomina[]
 
   @@map("empresas")
 }
@@ -135,6 +137,7 @@ model Obra {
   asignacionesMaquinaria AsignacionMaquinaria[]
   ordenesCompra          OrdenCompra[]
   movimientosMaterial    MovimientoInventario[]
+  periodosNomina         PeriodoNomina[]
 
   @@unique([empresaId, codigo])
   @@map("obras")
@@ -799,16 +802,14 @@ model Poliza {
 
   tipo     TipoPoliza
   folio    Int
-  fecha    DateTime   @default(now())
+  fecha    DateTime
   concepto String
 
-  cuadrada Boolean @default(true)
+  empresa      Empresa        @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  detalles     DetallePoliza[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  empresa  Empresa         @relation(fields: [empresaId], references: [id], onDelete: Cascade)
-  detalles DetallePoliza[]
 
   @@unique([empresaId, tipo, folio])
   @@map("polizas")
@@ -828,9 +829,96 @@ model DetallePoliza {
   descripcion String?
   debe        Decimal @default(0) @db.Decimal(18, 2)
   haber       Decimal @default(0) @db.Decimal(18, 2)
+  
+  referencia  String? // UUID factura, cheque, etc.
 
-  poliza    Poliza         @relation(fields: [polizaId], references: [id], onDelete: Cascade)
-  cuenta    CuentaContable @relation(fields: [cuentaId], references: [id])
+  poliza Poliza         @relation(fields: [polizaId], references: [id], onDelete: Cascade)
+  cuenta CuentaContable @relation(fields: [cuentaId], references: [id])
 
   @@map("detalles_poliza")
+}
+
+// ============================================
+// MÓDULO: Nómina (Rayas)
+// ============================================
+
+model Empleado {
+  id        String   @id @default(cuid())
+  empresaId String
+  
+  nombre    String
+  puesto    String   // Albañil, Fierrero, Ayudante
+  
+  salarioDiario Decimal @default(0) @db.Decimal(18, 2)
+  
+  telefono  String?
+  activo    Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa   Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  pagos     DetalleNomina[]
+
+  @@map("empleados")
+}
+
+model PeriodoNomina {
+  id        String   @id @default(cuid())
+  empresaId String
+  obraId    String?  // Opcional, si la raya es por obra
+  
+  tipoPeriodo TipoPeriodoNomina @default(SEMANAL)
+  semana    Int?     // 1-52 (solo para semanal)
+  quincena  Int?     // 1-24 (solo para quincenal)
+  mes       Int?     // 1-12 (solo para mensual)
+  anio      Int
+  fechaInicio DateTime
+  fechaFin    DateTime
+  
+  estado    EstadoNomina @default(BORRADOR)
+  total     Decimal      @default(0) @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa   Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  obra      Obra?      @relation(fields: [obraId], references: [id])
+  detalles  DetalleNomina[]
+
+  @@map("periodos_nomina")
+}
+
+enum TipoPeriodoNomina {
+  SEMANAL
+  QUINCENAL
+  MENSUAL
+}
+
+enum EstadoNomina {
+  BORRADOR
+  CERRADA
+  PAGADA
+}
+
+model DetalleNomina {
+  id              String   @id @default(cuid())
+  periodoNominaId String
+  empleadoId      String
+  
+  diasTrabajados  Decimal  @default(6) @db.Decimal(4, 1) // Admite medios días
+  salarioDiario   Decimal  @db.Decimal(18, 2) // Snapshot del salario
+  
+  importeBase     Decimal  @db.Decimal(18, 2) // Dias * Salario
+  extras          Decimal  @default(0) @db.Decimal(18, 2) // Horas extra o bonos
+  deducciones     Decimal  @default(0) @db.Decimal(18, 2) // Préstamos
+  
+  totalPagar      Decimal  @db.Decimal(18, 2)
+  
+  notas           String?
+
+  periodo  PeriodoNomina @relation(fields: [periodoNominaId], references: [id], onDelete: Cascade)
+  empleado Empleado      @relation(fields: [empleadoId], references: [id])
+
+  @@map("detalles_nomina")
 }

@@ -1,134 +1,64 @@
-# ERP Construcción MX
+# ERP Construcción MX 🏗️
 
-Sistema ERP completo para empresas constructoras en México, desarrollado con Next.js 14, TypeScript, Prisma y Supabase.
+Sistema Integral de Gestión (ERP) diseñado específicamente para empresas constructoras y de maquinaria pesada en México. Centraliza Obras, Finanzas, Compras y Maquinaria en una sola plataforma web y móvil.
+
+![Dashboard Preview](/public/dashboard-preview.png)
 
 ## 🚀 Características Principales
 
-### Módulos Implementados
+### 🚧 Operaciones (Obras)
+- **Control de Proyectos**: Gestión de costos y avances por obra.
+- **Estimaciones**: Generación de estimaciones para cobro a clientes (con PDF).
+- **Asistencia Técnica**: Bitácoras y control de residentes.
 
-- ✅ **Dashboard** - Resumen ejecutivo con estadísticas en tiempo real
-- ✅ **Gestión de Obras** - CRUD completo con estados y seguimiento
-- ✅ **Gestión de Clientes** - Catálogo con validación RFC y datos fiscales
-- ✅ **Gestión de Proveedores** - Control de proveedores y contactos
-- ✅ **Gestión de Productos** - Inventario con control de stock
-- ✅ **Presupuestos** - Creación de presupuestos con conceptos detallados
-- ✅ **Avance de Obra** - Tracking de progreso por concepto
-- ✅ **Exportación PDF** - Generación profesional de presupuestos y avances
-- ✅ **Búsqueda Global** - Búsqueda instantánea con Ctrl+K
+### 🚜 Maquinaria Pesada
+- **Catálogo de Equipos**: Control de flotilla.
+- **Mantenimiento**: Programación de servicios (preventivos/correctivos).
+- **Asignaciones**: Rastreo de ubicación y horómetros.
 
-### Características Técnicas
+### 💰 Financiero y Fiscal
+- **Facturación 4.0**: Emisión de CFDI timbrados.
+- **Tesorería**: Control bancario y flujo de efectivo.
+- **Contabilidad**: Pólizas automáticas y manuales (cuadre Debe/Haber).
+- **Reportes Consolidados**: Estado de resultados por obra y empresa.
 
-- 🏢 **Multi-tenancy** - Soporte para múltiples empresas
-- 🔐 **Autenticación** - Sistema seguro con Supabase Auth
-- 📱 **Responsive** - Diseño adaptable a todos los dispositivos
-- 🎨 **UI Moderna** - Componentes con shadcn/ui y Tailwind CSS
-- ⌨️ **Atajos de Teclado** - Navegación rápida (Ctrl+K para buscar)
-- 📊 **Reportes PDF** - Generación de documentos profesionales
-- 🔍 **Búsqueda Inteligente** - Búsqueda en tiempo real con debounce
+### 📦 Compras e Inventario
+- **Ciclo Completo**: Requisición -> Orden de Compra -> Recepción -> Factura.
+- **Almacén**: Entradas, salidas a obra y control de stock mínimo.
 
-## 📋 Requisitos Previos
+### 🤖 ERP Copilot (IA)
+- **Chat Inteligente**: Asistente virtual integrado.
+- **Consultas Naturales**: "pregunta" sobre tus finanzas o inventario.
+- **Alertas Proactivas**: Avisos de stock bajo o flujo negativo.
 
+### 📱 Super App (PWA)
+- **Modo Offline**: Funciona sin internet para captura en obra.
+- **Instalable**: Descarga directa en iOS y Android.
+
+## 🛠️ Stack Tecnológico
+- **Frontend**: Next.js 14, React, Tailwind CSS, Shadcn UI.
+- **Backend**: Next.js API Routes, Server Actions.
+- **Base de Datos**: PostgreSQL (Supabase) + Prisma ORM.
+- **IA**: Vercel AI SDK + OpenAI.
+- **Móvil**: PWA (Service Workers).
+
+## 🚀 Instalación y Despliegue
+
+### Requisitos
 - Node.js 18+
-- PostgreSQL 14+
-- Cuenta de Supabase (para autenticación)
-- npm o pnpm
+- PostgreSQL (Supabase recomendado)
 
-## 🛠️ Instalación
+### Pasos
+1.  Clonar repositorio.
+2.  `npm install`
+3.  Configurar `.env` (ver `.env.example`).
+4.  `npx prisma db push`
+5.  `npm run dev`
 
-### 1. Clonar el repositorio
+### API Keys Requeridas
+- `DATABASE_URL` (Supabase)
+- `NEXT_PUBLIC_SUPABASE_URL` y Key
+- `OPENAI_API_KEY` (Opcional, para Copilot)
 
-```bash
-git clone <repository-url>
-cd erp-construccion
-```
-
-### 2. Instalar dependencias
-
-```bash
-npm install
-```
-
-### 3. Configurar variables de entorno
-
-Crear archivo `.env` en la raíz del proyecto:
-
-```env
-# Database
-DATABASE_URL="postgresql://user:password@localhost:5432/erp_construccion"
-DIRECT_URL="postgresql://user:password@localhost:5432/erp_construccion"
-
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key"
-```
-
-### 4. Ejecutar migraciones de base de datos
-
-```bash
-npx prisma migrate dev
-npx prisma generate
-```
-
-### 5. Iniciar servidor de desarrollo
-
-```bash
-npm run dev
-```
-
-La aplicación estará disponible en `http://localhost:3000`
-
-## 📊 Estadísticas del Proyecto
-
-- **30 Rutas**: 21 páginas + 9 API routes
-- **8 Módulos Principales**: Completamente funcionales
-- **50+ Componentes**: Reutilizables y tipados
-- **15 Modelos de Datos**: Con relaciones completas
-- **100% TypeScript**: Tipado estático en todo el proyecto
-
-## 🔧 Scripts Disponibles
-
-```bash
-# Desarrollo
-npm run dev              # Iniciar servidor de desarrollo
-
-# Build
-npm run build            # Compilar para producción
-npm start                # Iniciar servidor de producción
-
-# Database
-npx prisma studio        # Interfaz visual de base de datos
-npx prisma migrate dev   # Crear y aplicar migración
-npx prisma generate      # Generar cliente Prisma
-```
-
-## 📚 Tecnologías Utilizadas
-
-### Frontend
-- **Next.js 14** - Framework React con App Router
-- **TypeScript 5** - Tipado estático
-- **Tailwind CSS 3** - Estilos utility-first
-- **shadcn/ui** - Componentes UI
-- **Radix UI** - Primitivos accesibles
-
-### Backend
-- **Next.js API Routes** - Endpoints REST
-- **Prisma 5** - ORM para PostgreSQL
-- **Supabase** - Autenticación y base de datos
-- **zod** - Validación de esquemas
-
-### Generación de PDFs
-- **jsPDF** - Creación de PDFs
-- **jspdf-autotable** - Tablas en PDFs
-
-## 🚧 Próximas Funcionalidades
-
-- [ ] Estimaciones y Facturación
-- [ ] Contratos y Convenios
-- [ ] Módulo de Tesorería
-- [ ] Contabilidad integrada
-- [ ] Gestión de Usuarios y Permisos
-- [ ] Reportes y Analytics
-
----
-
-**Desarrollado con ❤️ para la industria de la construcción en México**
+## 📄 Licencia
+Propiedad Privada - Desarrollado para gestión interna.
