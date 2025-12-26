@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import { prisma } from '@/lib/prisma'
-import pdf from 'pdf-parse'
 import OpenAI from 'openai'
 
 export async function POST(req: NextRequest) {
@@ -45,19 +43,12 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'El archivo no debe superar 5MB' }, { status: 400 })
         }
 
-        // Convert file to buffer
+        // Convert file to base64
         const arrayBuffer = await file.arrayBuffer()
         const buffer = Buffer.from(arrayBuffer)
+        const base64PDF = buffer.toString('base64')
 
-        // Extract text from PDF
-        const pdfData = await pdf(buffer)
-        const extractedText = pdfData.text
-
-        if (!extractedText || extractedText.trim().length === 0) {
-            return NextResponse.json({ error: 'No se pudo extraer texto del PDF' }, { status: 400 })
-        }
-
-        // Use OpenAI API key from environment (for new company registration)
+        // Use OpenAI API key from environment
         const apiKey = process.env.OPENAI_API_KEY
 
         if (!apiKey) {
@@ -67,13 +58,22 @@ export async function POST(req: NextRequest) {
             )
         }
 
-        // Use OpenAI to extract structured data
+        // Use OpenAI to extract structured data directly from PDF
         const openai = new OpenAI({ apiKey })
 
-        const prompt = `Extrae la siguiente información de esta Constancia de Situación Fiscal del SAT de México:
-
-Texto del PDF:
-${extractedText}
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+                {
+                    role: 'system',
+                    content: 'Eres un asistente experto en extraer datos fiscales de documentos del SAT de México. Retornas SOLO JSON válido, sin markdown ni explicaciones.',
+                },
+                {
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'text',
+                            text: `Extrae la siguiente información de esta Constancia de Situación Fiscal del SAT de México:
 
 Retorna SOLO un JSON válido con esta estructura exacta (sin markdown, sin explicaciones):
 {
@@ -85,17 +85,14 @@ Retorna SOLO un JSON válido con esta estructura exacta (sin markdown, sin expli
 }
 
 Si no encuentras algún dato, usa una cadena vacía "".`
-
-        const completion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [
-                {
-                    role: 'system',
-                    content: 'Eres un asistente experto en extraer datos fiscales de documentos del SAT de México. Retornas SOLO JSON válido, sin markdown ni explicaciones.',
-                },
-                {
-                    role: 'user',
-                    content: prompt,
+                        },
+                        {
+                            type: 'image_url',
+                            image_url: {
+                                url: `data:application/pdf;base64,${base64PDF}`,
+                            },
+                        },
+                    ],
                 },
             ],
             temperature: 0.1,
