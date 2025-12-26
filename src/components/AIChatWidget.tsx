@@ -44,8 +44,8 @@ export function AIChatWidget() {
                 {messages.map(m => (
                     <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                         <div className={`max-w-[80%] rounded-lg p-3 text-sm ${m.role === 'user'
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-white border text-slate-800 shadow-sm'
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white border text-slate-800 shadow-sm'
                             }`}>
                             {m.content}
                         </div>

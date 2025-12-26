@@ -6,20 +6,51 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
-import { Building, Users as UsersIcon } from 'lucide-react'
+import { Building, Users as UsersIcon, Upload, Link as LinkIcon } from 'lucide-react'
 
 export default function EmpresaConfigPage() {
     const [empresa, setEmpresa] = useState<any>({})
     const [loading, setLoading] = useState(true)
+    const [logoMode, setLogoMode] = useState<'url' | 'file'>('url')
+    const [logoPreview, setLogoPreview] = useState('')
 
     useEffect(() => {
         fetch('/api/empresa')
             .then(res => res.json())
-            .then(res => {
-                if (res.data) setEmpresa(res.data)
+            .then(data => {
+                setEmpresa(data)
+                setLogoPreview(data.logo || '')
                 setLoading(false)
             })
     }, [])
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        if (!file.type.startsWith('image/')) {
+            alert('Solo se permiten archivos de imagen')
+            return
+        }
+
+        if (file.size > 2 * 1024 * 1024) {
+            alert('El archivo no debe superar 2MB')
+            return
+        }
+
+        const reader = new FileReader()
+        reader.onloadend = () => {
+            const base64 = reader.result as string
+            setEmpresa({ ...empresa, logo: base64 })
+            setLogoPreview(base64)
+        }
+        reader.readAsDataURL(file)
+    }
+
+    const handleUrlChange = (url: string) => {
+        setEmpresa({ ...empresa, logo: url })
+        setLogoPreview(url)
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -29,9 +60,10 @@ export default function EmpresaConfigPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(empresa)
             })
-            if (res.ok) alert('Datos actualizados')
+            if (res.ok) alert('Datos actualizados correctamente')
         } catch (err) {
             console.error(err)
+            alert('Error al guardar')
         }
     }
 
@@ -61,6 +93,64 @@ export default function EmpresaConfigPage() {
                                 onChange={e => setEmpresa({ ...empresa, razonSocial: e.target.value })}
                             />
                         </div>
+
+                        {/* Logo Upload Section */}
+                        <div className="space-y-3">
+                            <Label>Logo de la Empresa</Label>
+
+                            {/* Preview */}
+                            {logoPreview && (
+                                <div className="flex justify-center p-4 bg-gray-50 rounded border">
+                                    <img src={logoPreview} alt="Logo" className="max-h-32 object-contain" />
+                                </div>
+                            )}
+
+                            {/* Mode Tabs */}
+                            <div className="flex gap-2 border-b">
+                                <button
+                                    type="button"
+                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition ${logoMode === 'url' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'
+                                        }`}
+                                    onClick={() => setLogoMode('url')}
+                                >
+                                    <LinkIcon className="h-4 w-4 inline mr-1" /> URL
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`px-4 py-2 text-sm font-medium border-b-2 transition ${logoMode === 'file' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'
+                                        }`}
+                                    onClick={() => setLogoMode('file')}
+                                >
+                                    <Upload className="h-4 w-4 inline mr-1" /> Subir Archivo
+                                </button>
+                            </div>
+
+                            {/* URL Input */}
+                            {logoMode === 'url' && (
+                                <div>
+                                    <Input
+                                        type="url"
+                                        placeholder="https://ejemplo.com/logo.png"
+                                        value={empresa.logo || ''}
+                                        onChange={e => handleUrlChange(e.target.value)}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Ingresa la URL de una imagen</p>
+                                </div>
+                            )}
+
+                            {/* File Upload */}
+                            {logoMode === 'file' && (
+                                <div>
+                                    <Input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleFileUpload}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Máximo 2MB. Formatos: PNG, JPG, SVG</p>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label>RFC</Label>
@@ -77,6 +167,7 @@ export default function EmpresaConfigPage() {
                                 />
                             </div>
                         </div>
+
                         <div>
                             <Label>Dirección Fiscal</Label>
                             <Input
@@ -84,15 +175,7 @@ export default function EmpresaConfigPage() {
                                 onChange={e => setEmpresa({ ...empresa, direccion: e.target.value })}
                             />
                         </div>
-                        <div>
-                            <Label>Logo URL</Label>
-                            <Input
-                                value={empresa.logo || ''}
-                                onChange={e => setEmpresa({ ...empresa, logo: e.target.value })}
-                                placeholder="https://..."
-                            />
-                            {empresa.logo && <img src={empresa.logo} alt="Preview" className="h-16 mt-2 object-contain" />}
-                        </div>
+
                         <div className="pt-4 border-t">
                             <Label className="text-blue-600">Integración con Inteligencia Artificial</Label>
                             <p className="text-xs text-gray-500 mb-2">Ingresa tu API Key de OpenAI para activar el Chatbot.</p>
@@ -103,6 +186,7 @@ export default function EmpresaConfigPage() {
                                 placeholder="sk-..."
                             />
                         </div>
+
                         <Button type="submit">Guardar Cambios</Button>
                     </form>
                 </CardContent>

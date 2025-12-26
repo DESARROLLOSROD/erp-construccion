@@ -54,43 +54,47 @@ export async function POST(req: NextRequest) {
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
             {
-                get(name: string) {
-                    return cookieStore.get(name)?.value
+                cookies: {
+                    get(name: string) {
+                        return cookieStore.get(name)?.value
+                    },
                 },
+            }
+        )
+
+        const {
+            data: { session },
+        } = await supabase.auth.getSession()
+        if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+
+        const userEmpresa = await prisma.usuarioEmpresa.findFirst({
+            where: { usuario: { authId: session.user.id }, activo: true },
+        })
+
+        if (!userEmpresa) {
+            return NextResponse.json({ error: 'Usuario sin empresa' }, { status: 403 })
+        }
+
+        const body = await req.json()
+        const { tipoPeriodo, semana, quincena, mes, anio, fechaInicio, fechaFin, obraId } = body
+
+        const periodo = await prisma.periodoNomina.create({
+            data: {
+                empresaId: userEmpresa.empresaId,
+                tipoPeriodo,
+                semana: semana || null,
+                quincena: quincena || null,
+                mes: mes || null,
+                anio,
+                fechaInicio: new Date(fechaInicio),
+                fechaFin: new Date(fechaFin),
+                obraId: obraId || null,
             },
-      }
-    )
+        })
 
-    const {
-        data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-
-    const userEmpresa = await prisma.usuarioEmpresa.findFirst({
-        where: { usuario: { authId: session.user.id }, activo: true },
-    })
-
-    if (!userEmpresa) {
-        return NextResponse.json({ error: 'Usuario sin empresa' }, { status: 403 })
+        return NextResponse.json(periodo)
+    } catch (error) {
+        console.error('Error creating periodo:', error)
+        return NextResponse.json({ error: 'Error al crear periodo' }, { status: 500 })
     }
-
-    const body = await req.json()
-    const { semana, anio, fechaInicio, fechaFin, obraId } = body
-
-    const periodo = await prisma.periodoNomina.create({
-        data: {
-            empresaId: userEmpresa.empresaId,
-            semana,
-            anio,
-            fechaInicio: new Date(fechaInicio),
-            fechaFin: new Date(fechaFin),
-            obraId,
-        },
-    })
-
-    return NextResponse.json(periodo)
-} catch (error) {
-    console.error('Error creating periodo:', error)
-    return NextResponse.json({ error: 'Error al crear periodo' }, { status: 500 })
-}
 }
