@@ -3,6 +3,7 @@ import { createServerClient } from '@/lib/supabase'
 import { Sidebar } from '@/components/Sidebar'
 import { Header } from '@/components/header'
 import { Toaster } from '@/components/ui/toaster'
+import { AIChatWidget } from '@/components/AIChatWidget'
 
 export default async function DashboardLayout({
   children,
@@ -25,6 +26,7 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
+      <AIChatWidget />
       <Toaster />
     </div>
   )

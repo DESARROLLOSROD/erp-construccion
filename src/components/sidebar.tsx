@@ -41,6 +41,7 @@ const navigation = [
   { name: 'Productos', href: '/productos', icon: Package },
   { name: 'Facturación', href: '/facturacion', icon: FileText },
   { name: 'Contabilidad', href: '/contabilidad', icon: Calculator },
+  { name: 'Configuración', href: '/configuracion/empresa', icon: Settings },
 ]
 
 const secondaryNavigation = [

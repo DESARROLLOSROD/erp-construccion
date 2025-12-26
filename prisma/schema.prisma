@@ -27,6 +27,7 @@ model Empresa {
   telefono      String?
   email         String?
   logo          String?
+  openaiApiKey  String?  // Clave para integración IA
   activa        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
