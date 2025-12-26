@@ -1,14 +1,9 @@
-import { OpenAIStream, StreamingTextResponse } from 'ai'
-import { OpenAI } from 'openai'
+import { createOpenAI } from '@ai-sdk/openai'
+import { streamText } from 'ai'
 import { prisma } from '@/lib/prisma'
-import { withRole, handleApiError } from '@/lib/api-utils.ts' // Note: .ts extension might need removal in import if configured
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-
-// We need to bypass the standard 'withRole' wrapper because StreamingTextResponse 
-// works differently than the standard JSON response expected by the wrapper.
-// We'll reimplement auth check manually for this specific route.
 
 export async function POST(req: NextRequest) {
     try {
@@ -36,7 +31,8 @@ export async function POST(req: NextRequest) {
             return new Response('API Key no configurada en la empresa.', { status: 400 })
         }
 
-        const openai = new OpenAI({
+        // Create Custom OpenAI Provider with User's Key
+        const openai = createOpenAI({
             apiKey: userEmpresa.empresa.openaiApiKey
         })
 
@@ -66,7 +62,7 @@ export async function POST(req: NextRequest) {
         const lowStock = await prisma.producto.findMany({
             where: {
                 empresaId: userEmpresa.empresaId,
-                stockActual: { lte: 0 } // Simplified for MVP
+                stockActual: { lte: 0 }
             },
             take: 5,
             select: { nombre: true, stockActual: true }
@@ -84,17 +80,16 @@ export async function POST(req: NextRequest) {
         Se breve y profesional.
         `
 
-        const response = await openai.chat.completions.create({
-            model: 'gpt-3.5-turbo', // Cost effective for MVP
-            stream: true,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                ...messages
-            ]
+        const result = await streamText({
+            model: openai('gpt-3.5-turbo'),
+            messages: messages.map((m: any) => ({
+                role: m.role,
+                content: m.content
+            })),
+            system: systemPrompt,
         })
 
-        const stream = OpenAIStream(response)
-        return new StreamingTextResponse(stream)
+        return result.toDataStreamResponse()
 
     } catch (error) {
         console.error('Chat Error:', error)
