@@ -18,7 +18,9 @@ import {
   ClipboardList,
   Receipt,
   Search,
-  FileCheck
+  FileCheck,
+  BarChart3,
+  Archive
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui'
@@ -26,18 +28,19 @@ import { GlobalSearch } from '@/components/search/GlobalSearch'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Reportes', href: '/reportes', icon: BarChart3 },
   { name: 'Obras', href: '/obras', icon: HardHat },
   { name: 'Presupuestos', href: '/presupuestos', icon: ClipboardList },
   { name: 'Estimaciones', href: '/estimaciones', icon: FileCheck },
   { name: 'Maquinaria', href: '/maquinaria', icon: Truck },
   { name: 'Compras', href: '/compras', icon: FileCheck },
-  { name: 'Tesorería', href: '/tesoreria', icon: Landmark },
+  { name: 'Inventario', href: '/inventario/salidas', icon: Archive },
+  { name: 'Tesorería', href: '/tesoreria', icon: Wallet },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Proveedores', href: '/proveedores', icon: Truck },
   { name: 'Productos', href: '/productos', icon: Package },
   { name: 'Facturación', href: '/facturacion', icon: FileText },
   { name: 'Contabilidad', href: '/contabilidad', icon: Calculator },
-  { name: 'Tesorería', href: '/tesoreria', icon: Wallet },
 ]
 
 const secondaryNavigation = [

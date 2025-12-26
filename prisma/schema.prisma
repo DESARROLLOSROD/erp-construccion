@@ -42,6 +42,7 @@ model Empresa {
   maquinaria     Maquinaria[]
   ordenesCompra  OrdenCompra[]
   CuentaBancaria CuentaBancaria[]
+  facturas       Factura[]
 
   @@map("empresas")
 }
@@ -88,6 +89,7 @@ enum Rol {
   VENTAS // Ventas y facturación
   COMPRAS // Compras y proveedores
   OBRAS // Gestión de obras
+  ALMACEN // Gestión de inventarios
   USUARIO // Usuario básico (solo lectura)
 }
 
@@ -129,6 +131,7 @@ model Obra {
   estimaciones           Estimacion[]
   asignacionesMaquinaria AsignacionMaquinaria[]
   ordenesCompra          OrdenCompra[]
+  movimientosMaterial    MovimientoInventario[]
 
   @@unique([empresaId, codigo])
   @@map("obras")
@@ -229,6 +232,7 @@ model Estimacion {
   obra            Obra            @relation(fields: [obraId], references: [id], onDelete: Cascade)
   conceptos       ConceptoEstimacion[]
   transacciones   Transaccion[]
+  facturas        Factura[]
 
   @@unique([obraId, numero])
   @@map("estimaciones")
@@ -296,6 +300,7 @@ model Cliente {
 
   empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
   obras   Obra[]
+  facturas Factura[]
 
   @@unique([empresaId, rfc])
   @@map("clientes")
@@ -610,13 +615,15 @@ model MovimientoInventario {
   cantidad      Decimal        @db.Decimal(18, 4)
   costoUnitario Decimal        @default(0) @db.Decimal(18, 4) // Costo al momento del movimiento
 
-  referencia    String? // ID de Orden Compra o ID de Obra
+  referencia    String? // ID de Orden Compra u otra referencia externa
+  obraId        String? // Opcional, para asignar costo a obra
   observaciones String?
 
   fecha     DateTime @default(now())
   createdAt DateTime @default(now())
 
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+  obra     Obra?    @relation(fields: [obraId], references: [id])
 
   @@map("movimientos_inventario")
 }
@@ -683,4 +690,66 @@ model Transaccion {
 enum TipoTransaccion {
   INGRESO
   EGRESO
+}
+
+// ============================================
+// MÓDULO: Facturación (NUEVO)
+// ============================================
+
+model Factura {
+  id          String   @id @default(cuid())
+  empresaId   String
+  clienteId   String
+  estimacionId String? // Opcional, si viene de estimación
+
+  // Datos Fiscales
+  serie       String?
+  folio       Int
+  uuid        String?  @unique // Folio Fiscal (al timbrar)
+  
+  fecha       DateTime @default(now())
+  formaPago   String // 03 Transferencia, etc.
+  metodoPago  String // PUE, PPD
+  usoCfdi     String // G03, etc.
+
+  // Montos
+  subtotal    Decimal  @db.Decimal(18, 2)
+  iva         Decimal  @db.Decimal(18, 2)
+  total       Decimal  @db.Decimal(18, 2)
+
+  estado      EstadoFactura @default(BORRADOR)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa     Empresa     @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  cliente     Cliente     @relation(fields: [clienteId], references: [id])
+  estimacion  Estimacion? @relation(fields: [estimacionId], references: [id])
+  detalles    DetalleFactura[]
+
+  @@unique([empresaId, serie, folio])
+  @@map("facturas")
+}
+
+enum EstadoFactura {
+  BORRADOR
+  TIMBRADA
+  CANCELADA
+}
+
+model DetalleFactura {
+  id        String @id @default(cuid())
+  facturaId String
+
+  claveSat  String // 84111506
+  descripcion String
+  
+  cantidad  Decimal @db.Decimal(18, 4)
+  valorUnitario Decimal @db.Decimal(18, 4)
+  importe   Decimal @db.Decimal(18, 2)
+
+  factura   Factura @relation(fields: [facturaId], references: [id], onDelete: Cascade)
+
+  @@map("detalles_factura")
+}
 }

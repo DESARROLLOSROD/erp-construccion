@@ -108,7 +108,7 @@ export function withAuth(handler: ApiHandler): ApiHandler {
 // AUTORIZACIÓN POR ROL
 // ============================================
 
-export type RolPermitido = 'ADMIN' | 'CONTADOR' | 'VENTAS' | 'COMPRAS' | 'OBRAS' | 'USUARIO'
+export type RolPermitido = 'ADMIN' | 'CONTADOR' | 'VENTAS' | 'COMPRAS' | 'OBRAS' | 'ALMACEN' | 'USUARIO'
 
 /**
  * Verifica si el rol del usuario tiene permiso
