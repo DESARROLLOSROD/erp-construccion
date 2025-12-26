@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase'
-import { Sidebar } from '@/components/sidebar'
+import { Sidebar } from '@/components/Sidebar'
 import { Header } from '@/components/header'
 import { Toaster } from '@/components/ui/toaster'
 

@@ -17,7 +17,8 @@ import {
   ChevronLeft,
   ClipboardList,
   Receipt,
-  Search
+  Search,
+  FileCheck
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui'
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Obras', href: '/obras', icon: HardHat },
   { name: 'Presupuestos', href: '/presupuestos', icon: ClipboardList },
+  { name: 'Estimaciones', href: '/estimaciones', icon: FileCheck },
   { name: 'Clientes', href: '/clientes', icon: Users },
   { name: 'Proveedores', href: '/proveedores', icon: Truck },
   { name: 'Productos', href: '/productos', icon: Package },

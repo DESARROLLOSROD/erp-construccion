@@ -1,151 +1,144 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  createdResponse,
+  errorResponse,
+  getPaginationParams,
+  createPaginatedResponse,
+} from '@/lib/api-utils'
+import { presupuestoQuerySchema, presupuestoCreateSchema, validateSchema } from '@/lib/validations'
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  return withRole(['ADMIN', 'OBRAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const { searchParams } = new URL(req.url)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Validar parámetros de query
+      const query = validateSchema(presupuestoQuerySchema, {
+        obraId: searchParams.get('obraId'),
+        esVigente: searchParams.get('esVigente'),
+        page: searchParams.get('page') || '1',
+        limit: searchParams.get('limit') || '20',
+      })
+
+      const { skip, take } = getPaginationParams(query.page as number, query.limit as number)
+
+      // Construir filtros
+      const where: any = {
+        obra: {
+          empresaId: context.empresaId
         }
+      }
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (query.obraId) where.obraId = query.obraId
+      if (query.esVigente !== undefined) where.esVigente = query.esVigente
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Obtener parámetros de query
-        const { searchParams } = new URL(request.url)
-        const obraId = searchParams.get('obraId')
-
-        const presupuestos = await prisma.presupuesto.findMany({
-            where: {
-                obra: { empresaId },
-                ...(obraId && { obraId }),
+      const [presupuestos, total] = await Promise.all([
+        prisma.presupuesto.findMany({
+          where,
+          include: {
+            obra: {
+              select: {
+                id: true,
+                codigo: true,
+                nombre: true,
+                estado: true,
+              }
             },
-            include: {
-                obra: {
-                    select: {
-                        id: true,
-                        codigo: true,
-                        nombre: true,
-                    }
-                },
-                conceptos: {
-                    include: {
-                        unidad: {
-                            select: {
-                                id: true,
-                                nombre: true,
-                                abreviatura: true,
-                            }
-                        }
-                    }
-                }
-            },
-            orderBy: { updatedAt: 'desc' }
-        })
-
-        // Convertir Decimals y agregar totales
-        const presupuestosConverted = presupuestos.map(p => {
-            const conceptosConverted = p.conceptos.map(c => ({
-                ...c,
-                cantidad: Number(c.cantidad),
-                precioUnitario: Number(c.precioUnitario),
-                importe: Number(c.importe),
-            }))
-
-            const importeTotal = conceptosConverted.reduce((sum, c) => sum + c.importe, 0)
-
-            return {
-                ...p,
-                conceptos: conceptosConverted,
-                totalConceptos: conceptosConverted.length,
-                importeTotal,
+            _count: {
+              select: {
+                conceptos: true
+              }
             }
-        })
+          },
+          orderBy: { updatedAt: 'desc' },
+          skip,
+          take,
+        }),
+        prisma.presupuesto.count({ where })
+      ])
 
-        return NextResponse.json(presupuestosConverted)
+      // Calcular totales para cada presupuesto
+      const presupuestosConTotales = await Promise.all(
+        presupuestos.map(async (p) => {
+          const conceptos = await prisma.conceptoPresupuesto.findMany({
+            where: { presupuestoId: p.id },
+            select: { importe: true }
+          })
+
+          const importeTotal = conceptos.reduce((sum, c) => sum + Number(c.importe), 0)
+
+          return {
+            ...p,
+            totalConceptos: p._count.conceptos,
+            importeTotal,
+          }
+        })
+      )
+
+      const response = createPaginatedResponse(presupuestosConTotales, total, query.page as number, query.limit as number)
+      return successResponse(response)
     } catch (error) {
-        console.error('[PRESUPUESTOS_GET]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  return withRole(['ADMIN', 'OBRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      const body = await req.json()
+      const validatedData = validateSchema(presupuestoCreateSchema, body)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Verificar que la obra pertenezca a la empresa
+      const obra = await prisma.obra.findFirst({
+        where: {
+          id: validatedData.obraId,
+          empresaId: context.empresaId
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
+      if (!obra) {
+        return errorResponse('Obra no encontrada o no pertenece a tu empresa', 404)
+      }
+
+      // Si esVigente es true, marcar otros presupuestos de la obra como no vigentes
+      if (validatedData.esVigente) {
+        await prisma.presupuesto.updateMany({
+          where: {
+            obraId: validatedData.obraId,
+            esVigente: true
+          },
+          data: { esVigente: false }
         })
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-        const body = await request.json()
-
-        const { obraId, version, nombre, descripcion, esVigente } = body
-
-        if (!obraId || !nombre) {
-            return new NextResponse('ObraId y Nombre son requeridos', { status: 400 })
-        }
-
-        // Verificar que la obra pertenezca a la empresa
-        const obra = await prisma.obra.findFirst({
-            where: { id: obraId, empresaId }
-        })
-
-        if (!obra) {
-            return new NextResponse('Obra no encontrada o no pertenece a tu empresa', { status: 404 })
-        }
-
-        // Si esVigente es true, marcar otros como no vigentes
-        if (esVigente) {
-            await prisma.presupuesto.updateMany({
-                where: { obraId, esVigente: true },
-                data: { esVigente: false }
-            })
-        }
-
-        const presupuesto = await prisma.presupuesto.create({
-            data: {
-                obraId,
-                version: version || 1,
-                nombre,
-                descripcion,
-                esVigente: esVigente !== undefined ? esVigente : true,
-            },
-            include: {
-                obra: {
-                    select: {
-                        id: true,
-                        codigo: true,
-                        nombre: true,
-                    }
-                }
+      const presupuesto = await prisma.presupuesto.create({
+        data: {
+          obraId: validatedData.obraId,
+          version: validatedData.version,
+          nombre: validatedData.nombre,
+          descripcion: validatedData.descripcion,
+          esVigente: validatedData.esVigente,
+        },
+        include: {
+          obra: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+              estado: true,
             }
-        })
+          }
+        }
+      })
 
-        return NextResponse.json(presupuesto)
+      return createdResponse(presupuesto)
     } catch (error) {
-        console.error('[PRESUPUESTOS_POST]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }

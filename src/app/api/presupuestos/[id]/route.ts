@@ -1,211 +1,206 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { createServerClient } from '@/lib/supabase'
+import {
+  withRole,
+  handleApiError,
+  successResponse,
+  errorResponse,
+} from '@/lib/api-utils'
+import { presupuestoUpdateSchema, validateSchema, idSchema } from '@/lib/validations'
 
 export async function GET(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'OBRAS', 'CONTADOR', 'USUARIO'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const presupuestoId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
-        }
-
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
-
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
-
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Verificar que el presupuesto pertenezca a una obra de la empresa
-        const presupuesto = await prisma.presupuesto.findFirst({
-            where: {
-                id: params.id,
-                obra: { empresaId }
-            },
-            include: {
-                obra: {
-                    select: {
-                        id: true,
-                        codigo: true,
-                        nombre: true,
-                    }
-                },
-                conceptos: {
-                    include: {
-                        unidad: {
-                            select: {
-                                id: true,
-                                nombre: true,
-                                abreviatura: true,
-                            }
-                        }
-                    },
-                    orderBy: { clave: 'asc' }
-                }
+      // Buscar presupuesto verificando que pertenece a la empresa
+      const presupuesto = await prisma.presupuesto.findFirst({
+        where: {
+          id: presupuestoId,
+          obra: {
+            empresaId: context.empresaId
+          }
+        },
+        include: {
+          obra: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+              estado: true,
+              montoContrato: true,
             }
-        })
-
-        if (!presupuesto) {
-            return new NextResponse('Presupuesto no encontrado', { status: 404 })
+          },
+          conceptos: {
+            include: {
+              unidad: {
+                select: {
+                  id: true,
+                  nombre: true,
+                  abreviatura: true,
+                }
+              }
+            },
+            orderBy: { clave: 'asc' }
+          }
         }
+      })
 
-        // Convertir Decimals y calcular totales
-        const conceptosConverted = presupuesto.conceptos.map(c => ({
-            ...c,
-            cantidad: Number(c.cantidad),
-            precioUnitario: Number(c.precioUnitario),
-            importe: Number(c.importe),
-        }))
+      if (!presupuesto) {
+        return errorResponse('Presupuesto no encontrado', 404)
+      }
 
-        const importeTotal = conceptosConverted.reduce((sum, c) => sum + c.importe, 0)
+      // Convertir Decimals y calcular totales
+      const conceptosConverted = presupuesto.conceptos.map(c => ({
+        ...c,
+        cantidad: Number(c.cantidad),
+        precioUnitario: Number(c.precioUnitario),
+        importe: Number(c.importe),
+      }))
 
-        const presupuestoConverted = {
-            ...presupuesto,
-            conceptos: conceptosConverted,
-            totalConceptos: conceptosConverted.length,
-            importeTotal,
-        }
+      const importeTotal = conceptosConverted.reduce((sum, c) => sum + c.importe, 0)
 
-        return NextResponse.json(presupuestoConverted)
+      const presupuestoConverted = {
+        ...presupuesto,
+        obra: {
+          ...presupuesto.obra,
+          montoContrato: Number(presupuesto.obra.montoContrato)
+        },
+        conceptos: conceptosConverted,
+        totalConceptos: conceptosConverted.length,
+        importeTotal,
+      }
+
+      return successResponse(presupuestoConverted)
     } catch (error) {
-        console.error('[PRESUPUESTO_GET]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function PUT(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN', 'OBRAS'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const presupuestoId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Verificar que el presupuesto pertenezca a la empresa
+      const presupuestoExistente = await prisma.presupuesto.findFirst({
+        where: {
+          id: presupuestoId,
+          obra: {
+            empresaId: context.empresaId
+          }
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
+      if (!presupuestoExistente) {
+        return errorResponse('Presupuesto no encontrado', 404)
+      }
+
+      const body = await req.json()
+      const validatedData = validateSchema(presupuestoUpdateSchema, body)
+
+      // Si se marca como vigente, desmarcar los demás de la misma obra
+      if (validatedData.esVigente && !presupuestoExistente.esVigente) {
+        await prisma.presupuesto.updateMany({
+          where: {
+            obraId: presupuestoExistente.obraId,
+            esVigente: true,
+            id: { not: presupuestoId }
+          },
+          data: { esVigente: false }
         })
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
-        }
+      // Preparar datos para actualización (solo campos presentes)
+      const updateData: any = {}
+      if (validatedData.version !== undefined) updateData.version = validatedData.version
+      if (validatedData.nombre !== undefined) updateData.nombre = validatedData.nombre
+      if (validatedData.descripcion !== undefined) updateData.descripcion = validatedData.descripcion
+      if (validatedData.esVigente !== undefined) updateData.esVigente = validatedData.esVigente
 
-        const empresaId = usuario.empresas[0].empresaId
-
-        // Verificar que el presupuesto pertenezca a una obra de la empresa
-        const presupuestoExistente = await prisma.presupuesto.findFirst({
-            where: {
-                id: params.id,
-                obra: { empresaId }
+      const presupuesto = await prisma.presupuesto.update({
+        where: { id: presupuestoId },
+        data: updateData,
+        include: {
+          obra: {
+            select: {
+              id: true,
+              codigo: true,
+              nombre: true,
+              estado: true,
             }
-        })
-
-        if (!presupuestoExistente) {
-            return new NextResponse('Presupuesto no encontrado', { status: 404 })
+          }
         }
+      })
 
-        const body = await request.json()
-        const { version, nombre, descripcion, esVigente } = body
-
-        // Si se marca como vigente, desmarcar los demás
-        if (esVigente && !presupuestoExistente.esVigente) {
-            await prisma.presupuesto.updateMany({
-                where: {
-                    obraId: presupuestoExistente.obraId,
-                    esVigente: true,
-                    id: { not: params.id }
-                },
-                data: { esVigente: false }
-            })
-        }
-
-        const presupuesto = await prisma.presupuesto.update({
-            where: { id: params.id },
-            data: {
-                ...(version !== undefined && { version }),
-                ...(nombre && { nombre }),
-                ...(descripcion !== undefined && { descripcion }),
-                ...(esVigente !== undefined && { esVigente }),
-            },
-            include: {
-                obra: {
-                    select: {
-                        id: true,
-                        codigo: true,
-                        nombre: true,
-                    }
-                }
-            }
-        })
-
-        return NextResponse.json(presupuesto)
+      return successResponse(presupuesto)
     } catch (error) {
-        console.error('[PRESUPUESTO_PUT]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
 
 export async function DELETE(
-    request: Request,
-    { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: { id: string } }
 ) {
+  return withRole(['ADMIN'], async (req, context) => {
     try {
-        const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+      // Validar ID
+      const presupuestoId = validateSchema(idSchema, params.id)
 
-        if (!session) {
-            return new NextResponse('Unauthorized', { status: 401 })
+      // Verificar que el presupuesto pertenezca a la empresa
+      const presupuesto = await prisma.presupuesto.findFirst({
+        where: {
+          id: presupuestoId,
+          obra: {
+            empresaId: context.empresaId
+          }
         }
+      })
 
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id },
-            include: { empresas: true }
-        })
+      if (!presupuesto) {
+        return errorResponse('Presupuesto no encontrado', 404)
+      }
 
-        if (!usuario || usuario.empresas.length === 0) {
-            return new NextResponse('Usuario no asignado a ninguna empresa', { status: 403 })
+      // Verificar si tiene estimaciones asociadas a través de conceptos
+      const conceptosConEstimaciones = await prisma.conceptoEstimacion.findFirst({
+        where: {
+          conceptoPresupuesto: {
+            presupuestoId
+          }
         }
+      })
 
-        const empresaId = usuario.empresas[0].empresaId
+      if (conceptosConEstimaciones) {
+        return errorResponse(
+          'No se puede eliminar el presupuesto porque tiene estimaciones asociadas',
+          400
+        )
+      }
 
-        // Verificar que el presupuesto pertenezca a una obra de la empresa
-        const presupuesto = await prisma.presupuesto.findFirst({
-            where: {
-                id: params.id,
-                obra: { empresaId }
-            }
-        })
+      // Eliminar conceptos en cascada (aunque Prisma lo hace automáticamente con onDelete: Cascade)
+      await prisma.conceptoPresupuesto.deleteMany({
+        where: { presupuestoId }
+      })
 
-        if (!presupuesto) {
-            return new NextResponse('Presupuesto no encontrado', { status: 404 })
-        }
+      // Eliminar presupuesto
+      await prisma.presupuesto.delete({
+        where: { id: presupuestoId }
+      })
 
-        // Eliminar primero los conceptos
-        await prisma.conceptoPresupuesto.deleteMany({
-            where: { presupuestoId: params.id }
-        })
-
-        // Luego eliminar el presupuesto
-        await prisma.presupuesto.delete({
-            where: { id: params.id }
-        })
-
-        return new NextResponse(null, { status: 204 })
+      return successResponse({ message: 'Presupuesto eliminado correctamente' })
     } catch (error) {
-        console.error('[PRESUPUESTO_DELETE]', error)
-        return new NextResponse('Internal Error', { status: 500 })
+      return handleApiError(error)
     }
+  })(request, {} as any)
 }
