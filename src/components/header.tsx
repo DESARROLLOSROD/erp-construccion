@@ -2,7 +2,9 @@
 
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import { Button, Avatar, AvatarFallback, AvatarImage, Separator } from '@/components/ui'
+import { Button } from '@/components/ui/button'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Separator } from '@/components/ui/separator'
 import { User } from '@supabase/supabase-js'
 import { LogOut, Bell, Search, Building } from 'lucide-react'
 
@@ -20,7 +22,7 @@ export function Header({ user }: HeaderProps) {
     router.refresh()
   }
 
-  const userInitials = user.user_metadata?.nombre 
+  const userInitials = user.user_metadata?.nombre
     ? `${user.user_metadata.nombre.charAt(0)}${user.user_metadata.apellidos?.charAt(0) || ''}`
     : user.email?.substring(0, 2).toUpperCase()
 
@@ -74,9 +76,9 @@ export function Header({ user }: HeaderProps) {
           </div>
 
           {/* Logout */}
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleLogout}
             className="text-muted-foreground hover:text-red-600"
           >
