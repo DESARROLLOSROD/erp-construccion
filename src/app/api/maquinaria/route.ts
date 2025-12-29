@@ -86,6 +86,9 @@ export async function POST(request: NextRequest) {
     return withRole(['ADMIN', 'OBRAS'], async (req, context) => {
         try {
             const body = await req.json()
+            console.log('[POST /api/maquinaria] Body:', body)
+            console.log('[POST /api/maquinaria] Context:', context)
+
             const validatedData = maquinariaCreateSchema.parse(body)
 
             // Check for duplicate code

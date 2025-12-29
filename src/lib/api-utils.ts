@@ -96,10 +96,25 @@ export async function getApiContext(req: NextRequest): Promise<ApiContext | null
       }
     }
 
-    // Por ahora usar la primera empresa activa
-    const usuarioEmpresa = usuario.empresas[0]
+    // Buscar empresa activa desde cookie
+    const activeEmpresaCookie = req.cookies.get('active_empresa_id')?.value
+    let usuarioEmpresa = usuario.empresas[0]
 
-    console.log('[getApiContext] Contexto generado exitosamente. Empresa:', usuarioEmpresa.empresaId, 'Rol:', usuarioEmpresa.rol)
+    if (activeEmpresaCookie) {
+      const selected = usuario.empresas.find(e => e.empresaId === activeEmpresaCookie)
+      if (selected) {
+        usuarioEmpresa = selected
+        console.log('[getApiContext] Usando empresa desde cookie:', activeEmpresaCookie)
+      } else {
+        console.warn('[getApiContext] Cookie de empresa inválida para este usuario, usando default.')
+      }
+    }
+
+    console.log('[getApiContext] ✅ Contexto generado exitosamente:', {
+      empresaId: usuarioEmpresa.empresaId,
+      usuarioId: usuario.id,
+      rol: usuarioEmpresa.rol
+    })
 
     return {
       empresaId: usuarioEmpresa.empresaId,
@@ -292,14 +307,17 @@ export function convertDecimalsToNumbers<T>(obj: T): T {
   }
 
   if (typeof obj === 'object') {
-    // Si es un Decimal de Prisma
-    if ('toNumber' in obj && typeof (obj as any).toNumber === 'function') {
+    // Si ya es un Date, no tocarlo (NextResponse.json lo manejará)
+    if (obj instanceof Date) return obj
+
+    // Si es un Decimal de Prisma (tiene toNumber)
+    if ('toNumber' in (obj as any) && typeof (obj as any).toNumber === 'function') {
       return (obj as any).toNumber()
     }
 
     // Convertir recursivamente propiedades del objeto
     const converted: any = {}
-    for (const [key, value] of Object.entries(obj)) {
+    for (const [key, value] of Object.entries(obj as any)) {
       converted[key] = convertDecimalsToNumbers(value)
     }
     return converted

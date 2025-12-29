@@ -44,10 +44,11 @@ const navigation = [
   { name: 'Facturación', href: '/facturacion', icon: FileText },
   { name: 'Contabilidad', href: '/contabilidad', icon: Calculator },
   { name: 'Configuración', href: '/configuracion/empresa', icon: Settings },
+  { name: 'Agregar Empresa', href: '/empresas/nueva', icon: Building2 },
 ]
 
 const secondaryNavigation = [
-  { name: 'Configuración', href: '/configuracion', icon: Settings },
+  { name: 'Configuración', href: '/configuracion/empresa', icon: Settings },
 ]
 
 export function Sidebar() {
