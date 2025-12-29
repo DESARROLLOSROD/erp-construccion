@@ -1,7 +1,6 @@
 import OpenAI from 'openai'
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import pdf from 'pdf-parse'
 
 export type AIProvider = 'openai' | 'anthropic' | 'google'
 
@@ -15,50 +14,11 @@ interface ExtractedCSFData {
 
 /**
  * Extract data from CSF PDF using OpenAI
+ * NOTE: OpenAI doesn't support PDF parsing directly, so this will throw an error
+ * Use Anthropic Claude instead which has native PDF support
  */
 async function extractWithOpenAI(base64PDF: string): Promise<ExtractedCSFData> {
-    const apiKey = process.env.OPENAI_API_KEY
-    if (!apiKey) throw new Error('OpenAI API key not configured')
-
-    // Convert base64 PDF to buffer and extract text
-    const pdfBuffer = Buffer.from(base64PDF, 'base64')
-    const pdfData = await pdf(pdfBuffer)
-    const pdfText = pdfData.text
-
-    const openai = new OpenAI({ apiKey })
-
-    const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-            {
-                role: 'system',
-                content: 'Eres un asistente experto en extraer datos fiscales de documentos del SAT de México. Retornas SOLO JSON válido, sin markdown ni explicaciones.',
-            },
-            {
-                role: 'user',
-                content: `Extrae la siguiente información de esta Constancia de Situación Fiscal del SAT de México:
-
-Retorna SOLO un JSON válido con esta estructura exacta (sin markdown, sin explicaciones):
-{
-  "rfc": "string (RFC completo)",
-  "razonSocial": "string (nombre o razón social completa)",
-  "regimenFiscal": "string (código y descripción del régimen fiscal)",
-  "codigoPostal": "string (código postal de 5 dígitos)",
-  "direccion": "string (dirección fiscal completa)"
-}
-
-Si no encuentras algún dato, usa una cadena vacía "".
-
-Texto extraído del PDF:
-${pdfText}`
-            },
-        ],
-        temperature: 0.1,
-        max_tokens: 500,
-    })
-
-    const responseText = completion.choices[0]?.message?.content || '{}'
-    return parseAIResponse(responseText)
+    throw new Error('OpenAI does not support PDF extraction. Use Anthropic Claude instead.')
 }
 
 /**

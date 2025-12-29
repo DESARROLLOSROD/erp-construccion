@@ -31,7 +31,9 @@ export async function POST(req: NextRequest) {
         const base64PDF = buffer.toString('base64')
 
         // Extract data using AI service with fallback
-        const { data, usedProvider } = await extractCSFDataWithFallback(base64PDF, provider)
+        // Use anthropic as default since it has native PDF support
+        const preferredProvider = provider === 'openai' ? 'anthropic' : provider
+        const { data, usedProvider } = await extractCSFDataWithFallback(base64PDF, preferredProvider as any)
 
         return NextResponse.json({
             success: true,
