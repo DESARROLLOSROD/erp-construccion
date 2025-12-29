@@ -151,7 +151,21 @@ async function extractWithClaude(base64PDF: string): Promise<ExtractedCSFData> {
                             },
                             {
                                 type: 'text',
-                                text: 'Extrae RFC, Razón Social, Régimen Fiscal, Código Postal y Dirección. Responde SOLO con JSON.'
+                                text: `Extrae la siguiente información de esta Constancia de Situación Fiscal (CSF) del SAT de México:
+- RFC
+- Denominación o Razón Social
+- Régimen Fiscal (Código y descripción)
+- Código Postal
+- Dirección completa (Calle, número, colonia, municipio/alcaldía, estado)
+
+Responde SOLO un JSON válido con esta estructura:
+{
+  "rfc": "string",
+  "razonSocial": "string",
+  "regimenFiscal": "string",
+  "codigoPostal": "string",
+  "direccion": "string"
+}`
                             }
                         ],
                     }
@@ -218,7 +232,14 @@ async function extractWithGemini(base64PDF: string): Promise<ExtractedCSFData> {
                         data: base64PDF,
                     },
                 },
-                `Extrae RFC, Razón Social, Régimen Fiscal, Código Postal y Dirección. Responde SOLO JSON.`
+                `Extrae la siguiente información de esta Constancia de Situación Fiscal del SAT de México:
+- RFC
+- Denominación o Razón Social
+- Régimen Fiscal
+- Código Postal
+- Dirección completa
+
+Responde SOLO con un objeto JSON válido que contenga estas llaves: rfc, razonSocial, regimenFiscal, codigoPostal, direccion. Si no encuentras algo, deja la cadena vacía.`
             ])
 
             const responseText = result.response.text()
@@ -236,6 +257,7 @@ async function extractWithGemini(base64PDF: string): Promise<ExtractedCSFData> {
 
 /**
  * Parse AI response and extract structured data
+ * Standardizes keys from various AI naming conventions
  */
 function parseAIResponse(responseText: string): ExtractedCSFData {
     const cleanedText = responseText
@@ -245,13 +267,29 @@ function parseAIResponse(responseText: string): ExtractedCSFData {
 
     try {
         const data = JSON.parse(cleanedText)
-        return {
-            rfc: (data.rfc || '').toString(),
-            razonSocial: (data.razonSocial || '').toString(),
-            regimenFiscal: (data.regimenFiscal || '').toString(),
-            codigoPostal: (data.codigoPostal || '').toString(),
-            direccion: (data.direccion || '').toString(),
+
+        // Helper to find value regardless of case or underscores
+        const getVal = (keys: string[]) => {
+            for (const k of keys) {
+                if (data[k] !== undefined) return data[k].toString()
+                // Check lowercase
+                if (data[k.toLowerCase()] !== undefined) return data[k.toLowerCase()].toString()
+                // Check snake_case if camelCase
+                const snake = k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+                if (data[snake] !== undefined) return data[snake].toString()
+            }
+            return ''
         }
+
+        const structured = {
+            rfc: getVal(['rfc', 'RFC']),
+            razonSocial: getVal(['razonSocial', 'razon_social', 'nombre', 'denominacion']),
+            regimenFiscal: getVal(['regimenFiscal', 'regimen_fiscal', 'regimen']),
+            codigoPostal: getVal(['codigoPostal', 'cp', 'codigo_postal']),
+            direccion: getVal(['direccion', 'domicilio', 'direccion_fiscal']),
+        }
+
+        return structured
     } catch (e) {
         console.error('Error al parsear JSON de la IA:', responseText)
         return { rfc: '', razonSocial: '', regimenFiscal: '', codigoPostal: '', direccion: '' }
