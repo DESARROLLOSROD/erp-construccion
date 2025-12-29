@@ -46,15 +46,19 @@ export interface PaginatedResponse<T> {
 export async function getApiContext(req: NextRequest): Promise<ApiContext | null> {
   try {
     const supabase = createServerClient()
-    const { data: { session } } = await supabase.auth.getSession()
+    // Use getUser() as it is more robust than getSession() in server environments
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-    if (!session) {
+    if (authError || !user) {
+      console.warn('[getApiContext] No hay usuario autenticado:', authError?.message)
       return null
     }
 
+    console.log('[getApiContext] Usuario autenticado:', user.id, user.email)
+
     // Buscar usuario y su empresa
-    const usuario = await prisma.usuario.findUnique({
-      where: { authId: session.user.id },
+    let usuario = await prisma.usuario.findUnique({
+      where: { authId: user.id },
       include: {
         empresas: {
           where: { activo: true },
@@ -63,12 +67,39 @@ export async function getApiContext(req: NextRequest): Promise<ApiContext | null
       }
     })
 
-    if (!usuario || usuario.empresas.length === 0) {
-      return null
+    // Si el usuario no existe en nuestra DB (primera vez o desincronizado), crearlo
+    if (!usuario) {
+      console.log('[getApiContext] Sincronizando nuevo usuario desde Auth:', user.email)
+      usuario = await prisma.usuario.create({
+        data: {
+          authId: user.id,
+          email: user.email!,
+          nombre: user.user_metadata?.nombre || user.email?.split('@')[0] || 'Usuario',
+          apellidos: user.user_metadata?.apellidos || '',
+          activo: true
+        },
+        include: {
+          empresas: {
+            where: { activo: true },
+            include: { empresa: true }
+          }
+        }
+      })
+    }
+
+    if (usuario.empresas.length === 0) {
+      console.warn('[getApiContext] Usuario sin empresas activas:', usuario.id)
+      return {
+        empresaId: '',
+        usuarioId: usuario.id,
+        rol: 'USUARIO',
+      }
     }
 
     // Por ahora usar la primera empresa activa
     const usuarioEmpresa = usuario.empresas[0]
+
+    console.log('[getApiContext] Contexto generado exitosamente. Empresa:', usuarioEmpresa.empresaId, 'Rol:', usuarioEmpresa.rol)
 
     return {
       empresaId: usuarioEmpresa.empresaId,
@@ -76,7 +107,7 @@ export async function getApiContext(req: NextRequest): Promise<ApiContext | null
       rol: usuarioEmpresa.rol,
     }
   } catch (error) {
-    console.error('[getApiContext] Error:', error)
+    console.error('[getApiContext] Error crítico:', error)
     return null
   }
 }

@@ -62,9 +62,12 @@ export default function MaquinariaPage() {
             if (!response.ok) throw new Error('Error cargando maquinaria')
 
             const data = await response.json()
-            setMaquinaria(data.data.data) // Assuming paginated response structure
+            // Support both { data: [...] } and { data: { data: [...] } } structures
+            const resultList = data.data?.data || data.data || []
+            setMaquinaria(Array.isArray(resultList) ? resultList : [])
         } catch (error) {
-            console.error(error)
+            console.error('Error fetching maquinaria:', error)
+            setMaquinaria([])
         } finally {
             setLoading(false)
         }
@@ -72,6 +75,7 @@ export default function MaquinariaPage() {
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
+            {/* Header ... */}
             <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Maquinaria y Equipo</h1>
@@ -121,7 +125,7 @@ export default function MaquinariaPage() {
             {/* Grid/Table */}
             {loading ? (
                 <div className="text-center py-12">Cargando...</div>
-            ) : maquinaria.length === 0 ? (
+            ) : (!maquinaria || maquinaria.length === 0) ? (
                 <div className="text-center py-12 bg-white rounded-lg shadow-sm">
                     <Truck className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-500">No se encontraron equipos</p>

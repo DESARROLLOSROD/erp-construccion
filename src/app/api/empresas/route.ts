@@ -15,9 +15,9 @@ const empresaSchema = z.object({
 export async function POST(request: NextRequest) {
     try {
         const supabase = createServerClient()
-        const { data: { session } } = await supabase.auth.getSession()
+        const { data: { user }, error: authError } = await supabase.auth.getUser()
 
-        if (!session) {
+        if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
@@ -33,13 +33,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'El RFC ya está registrado' }, { status: 400 })
         }
 
-        // Get current Usuario ID from our DB (mapped from authId)
-        const usuario = await prisma.usuario.findUnique({
-            where: { authId: session.user.id }
+        // Ensure user exists in our DB (sync from Supabase Auth)
+        let usuario = await prisma.usuario.findUnique({
+            where: { authId: user.id }
         })
 
         if (!usuario) {
-            return NextResponse.json({ error: 'Usuario no encontrado en base de datos. Contacte soporte.' }, { status: 500 })
+            console.log('[api/empresas] Sincronizando nuevo usuario:', user.email)
+            usuario = await prisma.usuario.create({
+                data: {
+                    authId: user.id,
+                    email: user.email!,
+                    nombre: user.user_metadata?.nombre || user.email?.split('@')[0] || 'Usuario',
+                    apellidos: user.user_metadata?.apellidos || '',
+                    activo: true
+                }
+            })
         }
 
         // Transaction: Create Empresa AND Assign User as ADMIN

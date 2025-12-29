@@ -9,10 +9,13 @@ export const metadata: Metadata = {
   description: 'Sistema ERP para empresas de construcción y minería en México',
   manifest: '/manifest.json',
   appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
     title: 'ERP Const',
+    statusBarStyle: 'default',
+    startupImage: [],
   },
+  other: {
+    'mobile-web-app-capable': 'yes',
+  }
 }
 
 export const viewport: Viewport = {
