@@ -16,29 +16,54 @@ interface ExtractedCSFData {
 }
 
 /**
- * Helper to extract text from PDF using the project's specific pdf-parse structure
+ * Robust text extraction from PDF focusing on the project's specific pdf-parse-plus/Kozan version
+ * Version 4.x of pdfjs-dist (internal) changed some behaviors.
  */
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     try {
-        // Based on technical diagnostics, this version uses a static .parse method on the PDFParse class
-        console.log('Attempting PDF text extraction...')
+        console.log('--- Attempting PDF Text Extraction (Robust Mode) ---')
 
-        let pdfData;
-        if (pdf && pdf.PDFParse && typeof pdf.PDFParse.parse === 'function') {
-            pdfData = await pdf.PDFParse.parse(buffer)
-        } else if (typeof pdf === 'function') {
-            pdfData = await pdf(buffer)
-        } else if (pdf.default && typeof pdf.default === 'function') {
-            pdfData = await pdf.default(buffer)
-        } else {
-            console.error('No recognized pdf-parse entry point found in:', Object.keys(pdf))
-            throw new Error('No se encontró el punto de entrada de pdf-parse.')
+        // Strategy 1: The specific PDFParse class seen in logs
+        if (pdf && pdf.PDFParse) {
+            try {
+                console.log('Trying PDFParse class extraction...')
+                // NOTE: DO NOT set global.navigator, it is read-only in many Next.js environments
+
+                const parser = new pdf.PDFParse();
+                const result = await parser.parse(buffer);
+                return result?.text || result?.content || '';
+            } catch (e1: any) {
+                console.warn('PDFParse class failed:', e1.message);
+            }
         }
 
-        return pdfData?.text || pdfData?.content || ''
+        // Strategy 2: Traditional function call
+        if (typeof pdf === 'function') {
+            try {
+                console.log('Trying traditional function extraction...')
+                const result = await pdf(buffer);
+                return result?.text || '';
+            } catch (e2: any) {
+                console.warn('Traditional function failed:', e2.message);
+            }
+        }
+
+        // Strategy 3: default export
+        if (pdf && pdf.default && typeof pdf.default === 'function') {
+            try {
+                console.log('Trying default export extraction...')
+                const result = await pdf.default(buffer);
+                return result?.text || '';
+            } catch (e3: any) {
+                console.warn('Default export failed:', e3.message);
+            }
+        }
+
+        console.error('All pdf-parse strategies failed. Keys available:', Object.keys(pdf));
+        return '';
     } catch (error) {
-        console.error('Error in extractTextFromPDF:', error)
-        throw new Error('Error al extraer texto del documento PDF.')
+        console.error('Final error in extractTextFromPDF:', error);
+        return '';
     }
 }
 
@@ -53,7 +78,7 @@ async function extractWithOpenAI(base64PDF: string): Promise<ExtractedCSFData> {
     const extractedText = await extractTextFromPDF(buffer)
 
     if (!extractedText || extractedText.trim().length === 0) {
-        throw new Error('El PDF no contiene texto legible para OpenAI.')
+        throw new Error('El PDF no contiene texto legible (posiblemente escaneado) y gpt-4o requiere texto.')
     }
 
     const openai = new OpenAI({ apiKey })
@@ -68,27 +93,24 @@ async function extractWithOpenAI(base64PDF: string): Promise<ExtractedCSFData> {
             {
                 role: 'user',
                 content: `Extrae la siguiente información de esta Constancia de Situación Fiscal del SAT de México. 
-                Aquí está el texto extraído del PDF:
+                Texto extraído:
                 
                 ${extractedText}
 
-Retorna SOLO un JSON válido con esta estructura exacta (sin markdown, sin explicaciones):
+Retorna SOLO un JSON válido:
 {
-  "rfc": "string (RFC completo)",
-  "razonSocial": "string (nombre o razón social completa)",
-  "regimenFiscal": "string (código y descripción del régimen fiscal)",
-  "codigoPostal": "string (código postal de 5 dígitos)",
-  "direccion": "string (direccion fiscal completa)"
-}
-
-Si no encuentras algún dato, usa una cadena vacía "".`
+  "rfc": "string",
+  "razonSocial": "string",
+  "regimenFiscal": "string",
+  "codigoPostal": "string",
+  "direccion": "string"
+}`
             },
         ],
         temperature: 0.1,
     })
 
-    const responseText = completion.choices[0]?.message?.content || '{}'
-    return parseAIResponse(responseText)
+    return parseAIResponse(completion.choices[0]?.message?.content || '{}')
 }
 
 /**
@@ -100,119 +122,122 @@ async function extractWithClaude(base64PDF: string): Promise<ExtractedCSFData> {
 
     const anthropic = new Anthropic({ apiKey })
 
-    // Try models in order of capability and PDF support
-    const attempts = [
-        { model: 'claude-3-5-sonnet-20241022', supportsPDF: true },
-        { model: 'claude-3-5-sonnet-20240620', supportsPDF: true },
-        { model: 'claude-3-haiku-20240307', supportsPDF: false }
+    // Given the date is late 2025, we try newer models and broad aliases
+    const models = [
+        'claude-3-5-sonnet-latest',
+        'claude-3-5-sonnet-20241022',
+        'claude-3-sonnet-20240229',
+        'claude-3-opus-latest'
     ]
+    let lastErr = null
 
-    let latestError = null
-
-    for (const attempt of attempts) {
+    for (const model of models) {
         try {
-            console.log(`Trying Claude model: ${attempt.model}...`)
-
-            let content: any[] = []
-
-            if (attempt.supportsPDF) {
-                content = [
-                    {
-                        type: 'document',
-                        source: {
-                            type: 'base64',
-                            media_type: 'application/pdf',
-                            data: base64PDF,
-                        },
-                    },
-                    {
-                        type: 'text',
-                        text: `Extrae la siguiente información de esta Constancia de Situación Fiscal. Retorna SOLO JSON.`
-                    }
-                ]
-            } else {
-                // For models that don't support PDF, extract text first
-                const buffer = Buffer.from(base64PDF, 'base64')
-                const extractedText = await extractTextFromPDF(buffer)
-                content = [
-                    {
-                        type: 'text',
-                        text: `Extrae la siguiente información del texto: ${extractedText}. Retorna SOLO JSON.`
-                    }
-                ]
-            }
-
+            console.log(`Intentando Claude con modelo: ${model}...`)
             const message = await anthropic.messages.create({
-                model: attempt.model,
+                model: model,
                 max_tokens: 1024,
                 messages: [
                     {
                         role: 'user',
-                        content: content
+                        content: [
+                            {
+                                type: 'document',
+                                source: {
+                                    type: 'base64',
+                                    media_type: 'application/pdf',
+                                    data: base64PDF,
+                                },
+                            },
+                            {
+                                type: 'text',
+                                text: 'Extrae RFC, Razón Social, Régimen Fiscal, Código Postal y Dirección. Responde SOLO con JSON.'
+                            }
+                        ],
                     }
                 ],
-                system: 'Eres un extractor de datos fiscales. Responde siempre con JSON estructurado según se solicita, sin texto adicional.'
             })
 
             const responseText = message.content[0]?.type === 'text' ? message.content[0].text : '{}'
             return parseAIResponse(responseText)
-        } catch (error: any) {
-            console.warn(`Claude ${attempt.model} failed:`, error.message)
-            latestError = error
-            // Continue if it's a 404 (model not found) or 400 (PDF not supported)
-            if (error.status === 404 || (error.status === 400 && attempt.supportsPDF)) {
-                continue
-            }
-            throw error // Stop for other errors like Auth
+        } catch (e: any) {
+            console.warn(`Claude ${model} falló:`, e.message)
+            lastErr = e
+            if (e.status === 404) continue
+            break
         }
     }
 
-    throw latestError || new Error('All Claude models failed')
+    // Fallback to Haiku with text
+    console.log('Intentando fallback a Claude Haiku con texto extraído...')
+    const buffer = Buffer.from(base64PDF, 'base64')
+    const text = await extractTextFromPDF(buffer)
+    if (text) {
+        try {
+            const message = await anthropic.messages.create({
+                model: 'claude-3-haiku-20240307',
+                max_tokens: 1024,
+                messages: [{ role: 'user', content: `Extrae datos fiscales (JSON) de este texto: ${text}` }]
+            })
+            const responseText = message.content[0]?.type === 'text' ? message.content[0].text : '{}'
+            return parseAIResponse(responseText)
+        } catch (haikuErr: any) {
+            console.error('Haiku fallback failed:', haikuErr.message)
+        }
+    }
+
+    throw lastErr || new Error('Claude no pudo procesar el documento.')
 }
 
 /**
- * Extract data from CSF PDF using Google Gemini
+ * Extract data from CSF PDF using Google Gemini (Using models found in the account list)
  */
 async function extractWithGemini(base64PDF: string): Promise<ExtractedCSFData> {
     const apiKey = process.env.GOOGLE_API_KEY
-    if (!apiKey) {
-        console.warn('Google API key not configured, skipping Gemini...')
-        throw new Error('Google API key not configured')
-    }
+    if (!apiKey) throw new Error('Google API key not configured')
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
-    const result = await model.generateContent([
-        {
-            inlineData: {
-                mimeType: 'application/pdf',
-                data: base64PDF,
-            },
-        },
-        `Extrae la siguiente información de esta Constancia de Situación Fiscal del SAT de México:
+    // Updated models found in the user's specific account list (Dec 2025)
+    const models = [
+        'gemini-2.0-flash',
+        'gemini-2.0-flash-lite',
+        'gemini-2.5-flash',
+        'gemini-flash-latest'
+    ]
+    let lastErr = null
 
-Retorna SOLO un JSON válido con esta estructura exacta (sin markdown, sin explicaciones):
-{
-  "rfc": "string (RFC completo)",
-  "razonSocial": "string (nombre o razón social completa)",
-  "regimenFiscal": "string (código y descripción del régimen fiscal)",
-  "codigoPostal": "string (código postal de 5 dígitos)",
-  "direccion": "string (direccion fiscal completa)"
-}
+    for (const modelName of models) {
+        try {
+            console.log(`Intentando Gemini con modelo: ${modelName}...`)
+            const model = genAI.getGenerativeModel({ model: modelName })
+            const result = await model.generateContent([
+                {
+                    inlineData: {
+                        mimeType: 'application/pdf',
+                        data: base64PDF,
+                    },
+                },
+                `Extrae RFC, Razón Social, Régimen Fiscal, Código Postal y Dirección. Responde SOLO JSON.`
+            ])
 
-Si no encuentras algún dato, usa una cadena vacía "".`,
-    ])
+            const responseText = result.response.text()
+            return parseAIResponse(responseText)
+        } catch (e: any) {
+            console.warn(`Gemini ${modelName} falló:`, e.message)
+            lastErr = e
+            if (e.message.includes('404') || e.message.includes('not found')) continue
+            break
+        }
+    }
 
-    const responseText = result.response.text()
-    return parseAIResponse(responseText)
+    throw lastErr || new Error('Gemini no pudo procesar el documento.')
 }
 
 /**
  * Parse AI response and extract structured data
  */
 function parseAIResponse(responseText: string): ExtractedCSFData {
-    // Remove markdown code blocks if present
     const cleanedText = responseText
         .replace(/```json\n?/g, '')
         .replace(/```\n?/g, '')
@@ -228,63 +253,47 @@ function parseAIResponse(responseText: string): ExtractedCSFData {
             direccion: (data.direccion || '').toString(),
         }
     } catch (e) {
-        console.error('Failed to parse AI JSON response:', responseText)
-        throw new Error('Respuesta de la IA no es un JSON válido.')
+        console.error('Error al parsear JSON de la IA:', responseText)
+        return { rfc: '', razonSocial: '', regimenFiscal: '', codigoPostal: '', direccion: '' }
     }
 }
 
 /**
- * Main function to extract CSF data using specified AI provider
- */
-export async function extractCSFData(
-    base64PDF: string,
-    provider: AIProvider = 'openai'
-): Promise<ExtractedCSFData> {
-    try {
-        switch (provider) {
-            case 'openai':
-                return await extractWithOpenAI(base64PDF)
-            case 'anthropic':
-                return await extractWithClaude(base64PDF)
-            case 'google':
-                return await extractWithGemini(base64PDF)
-            default:
-                throw new Error(`Unknown AI provider: ${provider}`)
-        }
-    } catch (error) {
-        console.error(`Error with ${provider}:`, error)
-        throw error
-    }
-}
-
-/**
- * Extract CSF data with automatic fallback to other providers
+ * Main function with fallback logic
  */
 export async function extractCSFDataWithFallback(
     base64PDF: string,
     preferredProvider: AIProvider = 'openai'
 ): Promise<{ data: ExtractedCSFData; usedProvider: AIProvider }> {
-    const providers: AIProvider[] = [preferredProvider]
+    // Current environment stability ranking: Gemini (if model fits) > OpenAI (if text works) > Anthropic
+    const order: AIProvider[] = [preferredProvider]
+    if (preferredProvider !== 'google') order.push('google')
+    if (preferredProvider !== 'openai') order.push('openai')
+    if (preferredProvider !== 'anthropic') order.push('anthropic')
 
-    // Add fallback providers
-    if (preferredProvider !== 'anthropic') providers.push('anthropic')
-    if (preferredProvider !== 'openai') providers.push('openai')
-    if (preferredProvider !== 'google') providers.push('google')
+    let lastError = null
 
-    let lastError: Error | null = null
-
-    for (const provider of providers) {
+    for (const provider of order) {
         try {
-            console.log(`Intento de extracción con: ${provider}...`)
-            const data = await extractCSFData(base64PDF, provider)
-            console.log(`Extracción exitosa con: ${provider}`)
+            console.log(`--- Iniciando extracción con ${provider} ---`)
+            let data: ExtractedCSFData
+            switch (provider) {
+                case 'google': data = await extractWithGemini(base64PDF); break
+                case 'openai': data = await extractWithOpenAI(base64PDF); break
+                case 'anthropic': data = await extractWithClaude(base64PDF); break
+                default: throw new Error(`Proveedor desconocido: ${provider}`)
+            }
             return { data, usedProvider: provider }
-        } catch (error) {
-            console.warn(`Fallo con ${provider}:`, (error as Error).message)
-            lastError = error as Error
-            continue
+        } catch (e: any) {
+            console.error(`Fallo crítico con ${provider}:`, e.message)
+            lastError = e
         }
     }
 
-    throw lastError || new Error('Todos los proveedores de IA fallaron')
+    throw lastError || new Error('Todos los proveedores fallaron.')
+}
+
+export async function extractCSFData(base64PDF: string, provider: AIProvider): Promise<ExtractedCSFData> {
+    const result = await extractCSFDataWithFallback(base64PDF, provider)
+    return result.data
 }
