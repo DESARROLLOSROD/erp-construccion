@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import Link from 'next/link'
-import { Building, Users as UsersIcon, Upload, Link as LinkIcon } from 'lucide-react'
+import { Building, Users as UsersIcon, Upload, Link as LinkIcon, Brain } from 'lucide-react'
 
 export default function EmpresaConfigPage() {
     const [empresa, setEmpresa] = useState<any>({})
@@ -94,8 +95,58 @@ export default function EmpresaConfigPage() {
                             />
                         </div>
 
-                        {/* Logo Upload Section */}
-                        <div className="space-y-3">
+                        {/* AI Provider Selection */}
+                        <div className="space-y-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <div className="flex items-center gap-2 mb-2">
+                                <Brain className="h-5 w-5 text-blue-600" />
+                                <Label className="text-blue-900 font-semibold">Proveedor de Inteligencia Artificial</Label>
+                            </div>
+                            <p className="text-xs text-blue-700 mb-3">
+                                Selecciona qué IA usar para extracción de documentos y asistente virtual
+                            </p>
+                            <Select
+                                value={empresa.aiProvider || 'openai'}
+                                onValueChange={(value) => setEmpresa({ ...empresa, aiProvider: value })}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccionar proveedor" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="openai">
+                                        <div className="flex items-center gap-2">
+                                            <span>🤖</span>
+                                            <div>
+                                                <div className="font-medium">ChatGPT (OpenAI)</div>
+                                                <div className="text-xs text-gray-500">Rápido y preciso - Costo medio</div>
+                                            </div>
+                                        </div>
+                                    </SelectItem>
+                                    <SelectItem value="anthropic">
+                                        <div className="flex items-center gap-2">
+                                            <span>🧠</span>
+                                            <div>
+                                                <div className="font-medium">Claude (Anthropic)</div>
+                                                <div className="text-xs text-gray-500">Mejor para documentos - Costo medio</div>
+                                            </div>
+                                        </div>
+                                    </SelectItem>
+                                    <SelectItem value="google">
+                                        <div className="flex items-center gap-2">
+                                            <span>✨</span>
+                                            <div>
+                                                <div className="font-medium">Gemini (Google)</div>
+                                                <div className="text-xs text-gray-500">Gratis hasta límite - Buena precisión</div>
+                                            </div>
+                                        </div>
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-gray-600 mt-2">
+                                💡 El sistema intentará usar el proveedor seleccionado y cambiará automáticamente a otro si falla
+                            </p>
+                        </div>
+
+                        <div>
                             <Label>Logo de la Empresa</Label>
 
                             {/* Preview */}
@@ -187,7 +238,9 @@ export default function EmpresaConfigPage() {
                             />
                         </div>
 
-                        <Button type="submit">Guardar Cambios</Button>
+                        <Button type="submit" className="w-full">
+                            Guardar Cambios
+                        </Button>
                     </form>
                 </CardContent>
             </Card>

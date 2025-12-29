@@ -28,6 +28,7 @@ model Empresa {
   email         String?
   logo          String?
   openaiApiKey  String?  // Clave para integración IA
+  aiProvider    String?  @default("openai") // Proveedor de IA: openai, anthropic, google
   activa        Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
